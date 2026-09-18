@@ -840,3 +840,142 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .inspector-toggle { min-width: 34px; min-height: 36px; }
   .mode-switch button { padding: 0 8px; font-size: 10px; }
 }
+
+
+/* Spatial analysis v2 */
+.sun-viz-block {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--color-border);
+}
+.sun-exposure-viz {
+  display: grid;
+  grid-template-columns: minmax(82px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.sun-exposure-label {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sun-exposure-track {
+  min-width: 0;
+  height: 13px;
+  display: flex;
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-app-chrome);
+}
+.sun-segment {
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+}
+button.sun-segment { cursor: pointer; }
+.sun-segment.sun { background: #d8ad58; }
+.sun-segment.planned-shadow { background: var(--color-scenario-a); }
+.sun-segment.city-shadow { background: #626d78; }
+.sun-segment.night { background: #242b32; }
+.sun-segment.active {
+  box-shadow: inset 0 0 0 1px #fff, inset 0 0 0 2px rgba(0,0,0,.5);
+}
+.sun-exposure-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+}
+.sun-exposure-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.sun-key {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 2px;
+}
+.sun-key.sun { background: #d8ad58; }
+.sun-key.planned-shadow { background: var(--color-scenario-a); }
+.sun-key.city-shadow { background: #626d78; }
+
+.view-impact-viz {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+}
+.view-impact-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.view-impact-head span {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+}
+.view-impact-head strong {
+  color: var(--color-text-primary);
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.view-impact-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #222a32;
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+.view-impact-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-scenario-b);
+}
+.view-impact-viz small {
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+}
+.viewpoint-actions {
+  flex-wrap: wrap;
+}
+.viewpoint-actions .quiet-button {
+  flex: 1 1 90px;
+}
+.viewpoint-actions .quiet-button:disabled {
+  opacity: .45;
+  cursor: default;
+}
+
+.compare-grid {
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+}
+
+@media (max-width: 720px) {
+  .sun-viz-block {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
+  .sun-exposure-viz {
+    grid-template-columns: 72px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .sun-exposure-label { font-size: 9px; }
+  .sun-exposure-track { height: 12px; }
+  .sun-exposure-legend {
+    justify-content: flex-start;
+    font-size: 8px;
+  }
+  .view-impact-head strong { font-size: 17px; }
+}
