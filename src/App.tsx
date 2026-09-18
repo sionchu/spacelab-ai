@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "rea
 import { createApplicationActions } from "./actions";
 import { directSunStudy, planningMetrics } from "./analysis";
 import { SunExposureLegend, SunExposureTimeline, ViewImpactBar } from "./analysis-visuals";
+import { buildingPresets } from "./building-presets";
+import type { BuildingPreset } from "./building-presets";
 import {
   computeShadowPolygon,
   estimateGfa,
@@ -21,6 +23,8 @@ import {
   clearScenarioEntities,
   flyToSite,
   flyToViewpoint,
+  frameSite,
+  frameWorkspace,
   renderAnalysisMarkers,
   renderDraftFootprint,
   renderScenario,
@@ -186,6 +190,8 @@ export default function App() {
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mobileToolPanel, setMobileToolPanel] = useState<"site" | "building" | "analysis" | "scenario" | null>(null);
+  const [buildingCreateMode, setBuildingCreateMode] = useState<"preset" | "custom">("preset");
+  const [desktopBuildingMenuOpen, setDesktopBuildingMenuOpen] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("inspect");
   const [draftPoints, setDraftPoints] = useState<LocalPoint[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -420,19 +426,34 @@ export default function App() {
     }
   }
 
+  function createPreset(preset: BuildingPreset) {
+    actions.createBuildingMass(preset.input, "human");
+    setCanvasMode("inspect");
+    setMobileToolPanel(null);
+    setDesktopBuildingMenuOpen(false);
+  }
+
   function createRectangle() {
     actions.createBuildingMass({
+      name: "커스텀 건물",
       footprint: { kind: "rectangle", widthM: 32, depthM: 24 },
       heightM: 18,
       floors: 5,
-      intent: "새 사각형 매스",
+      intent: "커스텀 사각형 매스",
     }, "human");
     setCanvasMode("inspect");
+    setDesktopBuildingMenuOpen(false);
   }
 
   function startPolygon() {
     setDraftPoints([]);
     setCanvasMode("draw-polygon");
+    setDesktopBuildingMenuOpen(false);
+  }
+
+  function frameCurrentWorkspace() {
+    const scenarios = [active, compare].filter(Boolean) as typeof state.scenarios;
+    frameWorkspace(state.site, scenarios, state.viewpoint);
   }
 
   function finishPolygon() {
@@ -454,7 +475,7 @@ export default function App() {
 
   return <main className={`app-shell ${workspaceMode === "compare" ? "compare-mode" : ""}`}>
     <header className="topbar">
-      <div className="brand"><div className="brand-mark" aria-hidden="true">S</div><div><strong>SpaceLab</strong><span>/ {siteName(state.site.source, state.site.name)}</span></div></div>
+      <div className="brand"><div className="brand-copy"><strong>SpaceLab</strong><span>부지·일조·조망 검토</span></div></div>
       <button
         className="navigator-toggle"
         aria-label="대안 목록 열기"
@@ -493,6 +514,7 @@ export default function App() {
           setNavigatorOpen(false);
           setInspectorOpen(false);
           setMobileToolPanel(null);
+          setDesktopBuildingMenuOpen(false);
         }}
       />
       <aside className={`left-panel panel ${navigatorOpen ? "open" : ""}`}>
@@ -540,13 +562,33 @@ export default function App() {
         </div>
 
         <div className="model-toolbar" aria-label="건물 배치 도구">
-          <button className={canvasMode === "pick-site" ? "selected" : ""} onClick={() => setCanvasMode("pick-site")}>⌖ 필지 선택</button>
-          <button onClick={createRectangle}>＋ 사각형</button>
-          <button className={canvasMode === "draw-polygon" ? "selected" : ""} onClick={startPolygon}>✎ 자유형</button>
-          <button className={canvasMode === "move-mass" ? "selected" : ""} onClick={() => active && setCanvasMode("move-mass")} disabled={!active}>↔ 이동</button>
-          <button className={canvasMode === "sun-point" ? "selected" : ""} onClick={() => active && setCanvasMode("sun-point")} disabled={!active}>☀ 일조</button>
-          <button className={canvasMode === "viewpoint" ? "selected" : ""} onClick={() => setCanvasMode("viewpoint")}>◉ 조망</button>
+          <button className={canvasMode === "pick-site" ? "selected" : ""} onClick={() => setCanvasMode("pick-site")}>필지 선택</button>
+          <button className={desktopBuildingMenuOpen ? "selected" : ""} onClick={() => setDesktopBuildingMenuOpen((open) => !open)}>건물 추가</button>
+          <button className={canvasMode === "move-mass" ? "selected" : ""} onClick={() => active && setCanvasMode("move-mass")} disabled={!active}>이동</button>
+          <button className={canvasMode === "sun-point" ? "selected" : ""} onClick={() => active && setCanvasMode("sun-point")} disabled={!active}>일조</button>
+          <button className={canvasMode === "viewpoint" ? "selected" : ""} onClick={() => setCanvasMode("viewpoint")}>조망</button>
           <button onClick={() => active && actions.deleteScenario(active.id, "human")} disabled={!active}>삭제</button>
+        </div>
+
+        {desktopBuildingMenuOpen && <div className="building-create-popover">
+          <div className="create-mode-switch" role="group" aria-label="건물 생성 방식">
+            <button className={buildingCreateMode === "preset" ? "selected" : ""} onClick={() => setBuildingCreateMode("preset")}>프리셋</button>
+            <button className={buildingCreateMode === "custom" ? "selected" : ""} onClick={() => setBuildingCreateMode("custom")}>커스텀</button>
+          </div>
+          {buildingCreateMode === "preset" ? <div className="preset-grid desktop-presets">
+            {buildingPresets.map((preset) => <button key={preset.id} className="preset-card" onClick={() => createPreset(preset)}>
+              <span className={`preset-silhouette ${preset.silhouette}`} aria-hidden="true"><i></i></span>
+              <span className="preset-copy"><strong>{preset.label}</strong><small>{preset.floorsLabel}</small></span>
+            </button>)}
+          </div> : <div className="custom-create-grid">
+            <button onClick={createRectangle}><strong>사각형</strong><span>가로·세로를 직접 조절</span></button>
+            <button onClick={startPolygon}><strong>자유형</strong><span>지도에서 외곽점을 직접 지정</span></button>
+          </div>}
+        </div>}
+
+        <div className="map-utility-toolbar" aria-label="지도 화면 맞춤">
+          <button onClick={() => frameSite(state.site)} disabled={!vworldReady}>선택 부지</button>
+          <button onClick={frameCurrentWorkspace} disabled={!vworldReady}>전체 보기</button>
         </div>
 
         {canvasMode !== "inspect" && <div className="canvas-tool-hint">
@@ -606,18 +648,33 @@ export default function App() {
           {searchResults.length > 0 && <div className="mobile-search-results">
             {searchResults.map((result) => <button key={result.id} onClick={() => { void selectSearchResult(result); setMobileToolPanel(null); }}><strong>{result.title}</strong><span>{result.address}</span></button>)}
           </div>}
-          <button className="mobile-action primary-action" onClick={() => { setCanvasMode("pick-site"); setMobileToolPanel(null); }}>⌖ 지도에서 필지 선택</button>
+          <button className="mobile-action primary-action" onClick={() => { setCanvasMode("pick-site"); setMobileToolPanel(null); }}>지도에서 필지 선택</button>
+          <div className="mobile-reframe-actions">
+            <button disabled={!vworldReady} onClick={() => { frameSite(state.site); setMobileToolPanel(null); }}>선택 부지로 복귀</button>
+            <button disabled={!vworldReady} onClick={() => { frameCurrentWorkspace(); setMobileToolPanel(null); }}>전체 보기</button>
+          </div>
         </div>}
 
         {mobileToolPanel === "building" && <div className="mobile-tool-content">
-          <div className="mobile-tool-head"><div><span>건물</span><strong>{active ? `${active.id}안 편집` : "첫 건물을 만들어보세요"}</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
-          <div className="mobile-action-grid">
-            <button className="mobile-action" onClick={() => { createRectangle(); setMobileToolPanel(null); }}><b>＋</b><span>사각형</span></button>
-            <button className="mobile-action" onClick={() => { startPolygon(); setMobileToolPanel(null); }}><b>✎</b><span>자유형</span></button>
-            <button className="mobile-action" disabled={!active} onClick={() => { if (active) setCanvasMode("move-mass"); setMobileToolPanel(null); }}><b>↔</b><span>이동</span></button>
-            <button className="mobile-action danger" disabled={!active} onClick={() => { if (active) actions.deleteScenario(active.id, "human"); setMobileToolPanel(null); }}><b>−</b><span>삭제</span></button>
+          <div className="mobile-tool-head"><div><span>건물</span><strong>{active ? `${active.id}안 편집 · 새 건물 추가` : "건물을 만들어보세요"}</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <div className="create-mode-switch" role="group" aria-label="건물 생성 방식">
+            <button className={buildingCreateMode === "preset" ? "selected" : ""} onClick={() => setBuildingCreateMode("preset")}>프리셋</button>
+            <button className={buildingCreateMode === "custom" ? "selected" : ""} onClick={() => setBuildingCreateMode("custom")}>커스텀</button>
           </div>
-          {active && <button className="mobile-action secondary-action" onClick={() => { setInspectorOpen(true); setMobileToolPanel(null); }}>높이·층수·회전 상세 설정</button>}
+          {buildingCreateMode === "preset" ? <div className="preset-grid">
+            {buildingPresets.map((preset) => <button key={preset.id} className="preset-card" onClick={() => createPreset(preset)}>
+              <span className={`preset-silhouette ${preset.silhouette}`} aria-hidden="true"><i></i></span>
+              <span className="preset-copy"><strong>{preset.label}</strong><small>{preset.floorsLabel}</small><em>{preset.description}</em></span>
+            </button>)}
+          </div> : <div className="custom-create-grid">
+            <button onClick={() => { createRectangle(); setMobileToolPanel(null); }}><strong>사각형</strong><span>기본 매스를 만든 뒤 폭·깊이·높이를 직접 조절</span></button>
+            <button onClick={() => { startPolygon(); setMobileToolPanel(null); }}><strong>자유형</strong><span>지도에서 원하는 건물 외곽점을 직접 지정</span></button>
+          </div>}
+          {active && <div className="mobile-edit-row">
+            <button onClick={() => { setCanvasMode("move-mass"); setMobileToolPanel(null); }}>위치 이동</button>
+            <button onClick={() => { setInspectorOpen(true); setMobileToolPanel(null); }}>상세 설정</button>
+            <button className="danger" onClick={() => { actions.deleteScenario(active.id, "human"); setMobileToolPanel(null); }}>삭제</button>
+          </div>}
         </div>}
 
         {mobileToolPanel === "analysis" && <div className="mobile-tool-content">
@@ -694,7 +751,7 @@ export default function App() {
             />}
           </>}<div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>이 위치에서 보기</button><button className="quiet-button" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "분석 중…" : "조망 분석"}</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>해제</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>조망 위치 선택</button>}</section>
           <small className="boundary">*일조·그림자 결과는 초기 공간 검토용입니다. 법적 일조권 판정이나 인허가 판단을 대신하지 않습니다.</small>
-        </> : <div className="inspector-empty"><div className="eyebrow">설계 설정</div><h2>선택된 건물이 없습니다</h2><p>사각형 또는 자유형 도구로 첫 건물을 만들어보세요.</p></div>}
+        </> : <div className="inspector-empty"><div className="eyebrow">설계 설정</div><h2>선택된 건물이 없습니다</h2><p>프리셋 또는 커스텀 방식으로 첫 건물을 만들어보세요.</p></div>}
       </aside>
     </section>
   </main>;
