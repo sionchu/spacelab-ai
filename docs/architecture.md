@@ -46,3 +46,15 @@ The VWorld/Cesium canvas also exposes point picking for parcel selection, free-p
 - VWorld/Cesium remains an adapter: it renders analysis markers and moves the camera to a saved viewpoint, but does not own analysis state.
 
 This phase intentionally does not implement zoning/legal compliance or statutory sunlight-right determination. City-context direct-sun results are runtime geometric estimates that depend on the VWorld 3D scene and available scene-height sampling.
+
+
+## View Impact v1
+
+View Impact reuses the canonical `viewpoint`, `Site`, and `BuildingMass` state.
+
+- `viewTargetSamples` creates deterministic target samples across the planned mass footprint and vertical levels.
+- `sampleViewImpact` samples the VWorld/Cesium scene height between the saved viewpoint and each target sample. SpaceLab-owned entities are excluded, so existing VWorld city/terrain context acts as the occluder.
+- The result reports visible sample count, total sample count, an estimated visibility ratio, and a coarse visibility classification.
+- UI and WebMCP call the same runtime scene-analysis function.
+
+This is a geometric comparison aid. The visibility percentage is a sampled estimate, not facade-area measurement, legal view-right determination, or planning approval.
