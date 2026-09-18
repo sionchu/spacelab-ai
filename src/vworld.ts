@@ -243,13 +243,13 @@ export function controlCamera(action: CameraControl) {
       break;
     case "rotate-left":
       camera.setView({
-        destination: camera.position,
+        destination: camera.positionWC,
         orientation: { heading: camera.heading - turn, pitch: camera.pitch, roll: camera.roll },
       });
       break;
     case "rotate-right":
       camera.setView({
-        destination: camera.position,
+        destination: camera.positionWC,
         orientation: { heading: camera.heading + turn, pitch: camera.pitch, roll: camera.roll },
       });
       break;
