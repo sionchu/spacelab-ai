@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createApplicationActions } from "./actions";
 import { directSunStudy, formatMinutes, planningMetrics } from "./analysis";
+import { SunExposureLegend, SunExposureTimeline, ViewImpactBar } from "./analysis-visuals";
 import {
   computeShadowPolygon,
   estimateGfa,
@@ -500,6 +501,22 @@ export default function App() {
               <div className="analysis-fields"><label>Date<input aria-label="Shadow date" type="date" value={activeDate} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, event.target.value, activeTime))} /></label><label>Time<input aria-label="Shadow time" type="time" value={activeTime} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, activeDate, event.target.value))} /></label></div>
             </div>
             <div className="timeline"><span>09:00</span><input aria-label="Shadow time timeline" type="range" min={540} max={1080} step={15} value={Math.min(1080, Math.max(540, activeMinutes))} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, activeDate, timeFromMinutes(Number(event.target.value))))} /><span>18:00</span></div>
+            {activeSunStudy && <div className="sun-viz-block">
+              <SunExposureTimeline
+                label={workspaceMode === "compare" ? `${active.id} · ${active.name}` : "Direct sun"}
+                samples={activeSunStudy.samples}
+                cityBlockedTimes={sceneBlockedTimes}
+                activeLocalDateTime={active.analysisTime}
+                onSelect={(localDateTime) => actions.setShadowTime(active.id, localDateTime)}
+              />
+              {workspaceMode === "compare" && compare && compareSunStudy && <SunExposureTimeline
+                label={`${compare.id} · ${compare.name}`}
+                samples={compareSunStudy.samples}
+                cityBlockedTimes={sceneBlockedTimes}
+                activeLocalDateTime={active.analysisTime}
+              />}
+              <SunExposureLegend />
+            </div>}
             {workspaceMode === "compare" && <div className="compare-drawer">
               <div className="compare-drawer-head"><div><div className="eyebrow">COMPARE</div><strong>Scenario delta</strong></div><select aria-label="Compare scenario" value={state.compareScenarioId ?? ""} onChange={(event) => actions.compareScenarios(active.id, event.target.value || undefined)}><option value="">No comparison</option>{state.scenarios.filter((scenario) => scenario.id !== active.id).map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.id} · {scenario.name}</option>)}</select></div>
               {compare && compareShadow ? <div className="compare-grid"><Meter label="Height A / B" value={`${active.mass.heightM} / ${compare.mass.heightM}`} suffix="m" /><Meter label="GFA Δ" value={(estimateGfa(active.mass) - estimateGfa(compare.mass)).toLocaleString()} suffix="㎡" /><Meter label="Shadow Δ" value={(activeShadow.lengthM - compareShadow.lengthM).toFixed(1)} suffix="m" /><Meter label="Direct sun A / B" value={activeSunStudy && compareSunStudy ? `${formatMinutes(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes)} / ${formatMinutes(sceneSunContext?.supported ? compareContextSunMinutes : compareSunStudy.sunMinutes)}` : "—"} /><Meter label="View visible A / B" value={viewImpactResults[active.id] && viewImpactResults[compare.id] ? `${viewImpactResults[active.id].visibleRatioPct.toFixed(0)} / ${viewImpactResults[compare.id].visibleRatioPct.toFixed(0)}` : "—"} suffix={viewImpactResults[active.id] && viewImpactResults[compare.id] ? "%" : ""} /></div> : <p className="muted">Select another scenario to compare.</p>}
@@ -524,7 +541,19 @@ export default function App() {
           <section className="inspector-section"><div className="section-heading"><span>SHADOW</span><b>{activeTime} KST</b></div><div className="readout-list"><div><span>Solar altitude</span><strong>{solarValue(activeShadow.solar.elevationDeg)}</strong></div><div><span>Azimuth</span><strong>{solarValue(activeShadow.solar.azimuthDeg)}</strong></div><div><span>Shadow length</span><strong>{activeShadow.solar.isDaylight ? `${activeShadow.lengthM.toFixed(1)}m` : "—"}</strong></div><div><span>Shadow bearing</span><strong>{shadowBearing(activeShadow)}{activeShadow.solar.isDaylight ? "°" : ""}</strong></div></div></section>
           <section className="inspector-section"><div className="section-heading"><span>PLANNING</span><b>CURRENT OPTION</b></div><div className="readout-list"><div><span>Site area</span><strong>{activePlanning ? Math.round(activePlanning.siteAreaM2).toLocaleString() : "—"}㎡</strong></div><div><span>Footprint</span><strong>{Math.round(footprintAreaM2(active.mass.footprint)).toLocaleString()}㎡</strong></div><div><span>Estimated GFA</span><strong>{estimateGfa(active.mass).toLocaleString()}㎡</strong></div><div><span>Planned coverage</span><strong>{activePlanning ? activePlanning.coverageRatioPct.toFixed(1) : "—"}%</strong></div><div><span>Planned FAR</span><strong>{activePlanning ? activePlanning.floorAreaRatioPct.toFixed(1) : "—"}%</strong></div></div></section>
           <section className="inspector-section"><div className="section-heading"><span>SUN EXPOSURE</span><b>09:00–18:00</b></div><div className="readout-list"><div><span>Study point</span><strong>{state.sunStudyPoint ? "Selected" : "Site center"}</strong></div><div><span>Direct sun</span><strong>{activeSunStudy ? formatMinutes(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes) : "—"}</strong></div><div><span>Planned-mass shadow</span><strong>{activeSunStudy ? formatMinutes(activeSunStudy.shadowMinutes) : "—"}</strong></div><div><span>City context</span><strong>{sceneSunBusy ? "Sampling…" : sceneSunContext?.supported ? "VWorld 3D" : "Planned mass only"}</strong></div></div><button className="quiet-button analysis-action" onClick={() => setCanvasMode("sun-point")}>Set sun study point</button>{state.sunStudyPoint && <button className="quiet-button analysis-action" onClick={() => actions.setSunStudyPoint(undefined, "human")}>Use site center</button>}</section>
-          <section className="inspector-section"><div className="section-heading"><span>VIEWPOINT</span><b>{state.viewpoint ? `${state.viewpoint.eyeHeightM.toFixed(1)}m EYE` : "NOT SET"}</b></div>{state.viewpoint ? <><label className="control"><div className="control-line"><span>Eye height</span><span className="value-editor"><input aria-label="Viewpoint eye height" type="number" min={1.2} max={50} step={0.1} value={state.viewpoint.eyeHeightM} onChange={(event) => actions.setViewpoint({ ...state.viewpoint!, eyeHeightM: Number(event.target.value) }, "human")} /><em>m</em></span></div></label>{viewImpactResults[active.id] && <div className="readout-list"><div><span>Visible samples</span><strong>{viewImpactResults[active.id].visibleSamples} / {viewImpactResults[active.id].totalSamples}</strong></div><div><span>Estimated visibility</span><strong>{viewImpactResults[active.id].visibleRatioPct.toFixed(0)}%</strong></div><div><span>View impact</span><strong>{viewImpactResults[active.id].classification.replaceAll("-", " ")}</strong></div></div>}<div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>Open view</button><button className="quiet-button" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "Analyzing…" : "Analyze view"}</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>Clear</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>Pick viewpoint</button>}</section>
+          <section className="inspector-section"><div className="section-heading"><span>VIEWPOINT</span><b>{state.viewpoint ? `${state.viewpoint.eyeHeightM.toFixed(1)}m EYE` : "NOT SET"}</b></div>{state.viewpoint ? <><label className="control"><div className="control-line"><span>Eye height</span><span className="value-editor"><input aria-label="Viewpoint eye height" type="number" min={1.2} max={50} step={0.1} value={state.viewpoint.eyeHeightM} onChange={(event) => actions.setViewpoint({ ...state.viewpoint!, eyeHeightM: Number(event.target.value) }, "human")} /><em>m</em></span></div></label>{viewImpactResults[active.id] && <>
+  <ViewImpactBar
+    visibleRatioPct={viewImpactResults[active.id].visibleRatioPct}
+    classification={viewImpactResults[active.id].classification}
+    label={`${active.id} visibility`}
+  />
+  <div className="readout-list"><div><span>Visible samples</span><strong>{viewImpactResults[active.id].visibleSamples} / {viewImpactResults[active.id].totalSamples}</strong></div></div>
+  {compare && viewImpactResults[compare.id] && <ViewImpactBar
+    visibleRatioPct={viewImpactResults[compare.id].visibleRatioPct}
+    classification={viewImpactResults[compare.id].classification}
+    label={`${compare.id} visibility`}
+  />}
+</>}<div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>Open view</button><button className="quiet-button" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "Analyzing…" : "Analyze view"}</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>Clear</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>Pick viewpoint</button>}</section>
           <small className="boundary">*Direct sun uses the current planned mass plus VWorld 3D scene height sampling when supported. It remains a geometric pre-check, not a statutory sunlight-right determination.</small>
         </> : <div className="inspector-empty"><div className="eyebrow">INSPECTOR</div><h2>No mass selected</h2><p>Use Rectangle or Polygon on the map to create the first design option.</p></div>}
       </aside>
