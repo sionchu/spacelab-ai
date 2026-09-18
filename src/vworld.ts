@@ -1,4 +1,11 @@
-import { computeShadowPolygon, localPointToGeo, rotatedFootprintPoints, siteTimeZoneOffsetMinutes } from "./model";
+import {
+  computeShadowPolygon,
+  geoPointToLocal,
+  localPointToGeo,
+  rotatedFootprintPoints,
+  siteTimeZoneOffsetMinutes,
+} from "./model";
+import { viewTargetSamples } from "./analysis";
 import type { SunStudySample } from "./analysis";
 import type { BuildingMass, GeoPoint, LocalPoint, Scenario, Site, Viewpoint } from "./types";
 
@@ -15,6 +22,8 @@ let scriptPromise: Promise<void> | null = null;
 let viewerPromise: Promise<any> | null = null;
 const entities = new Map<string, any>();
 let siteEntity: any;
+let siteOutlineEntity: any;
+let siteLabelEntity: any;
 let draftEntity: any;
 let sunStudyEntity: any;
 let viewpointEntity: any;
@@ -160,32 +169,179 @@ function localPointsToDegrees(center: GeoPoint, points: LocalPoint[]) {
   return points.map((point) => localPointToGeo(center, point)).flatMap((point) => [point.lon, point.lat]);
 }
 
-export function flyToSite(site: Site, height = 230) {
+function flyToGeo(point: GeoPoint, height: number) {
   const viewer = window.viewer;
   const Cesium = window.Cesium;
   if (!viewer?.camera || !Cesium) return;
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(site.center.lon, site.center.lat, height),
+    destination: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, height),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-72), roll: 0 },
     duration: 0.8,
   });
+}
+
+export function flyToSite(site: Site, height = 230) {
+  flyToGeo(site.center, height);
+}
+
+function frameGeoPoints(site: Site, points: GeoPoint[], minHeightM: number, scale = 3) {
+  if (!points.length) {
+    flyToSite(site);
+    return;
+  }
+
+  const local = points.map((point) => geoPointToLocal(site.center, point));
+  const xs = local.map((point) => point.xM);
+  const ys = local.map((point) => point.yM);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const widthM = Math.max(1, maxX - minX);
+  const depthM = Math.max(1, maxY - minY);
+  const spanM = Math.max(widthM, depthM, 36);
+  const center = localPointToGeo(site.center, {
+    xM: (minX + maxX) / 2,
+    yM: (minY + maxY) / 2,
+  });
+  const height = Math.min(1_800, Math.max(minHeightM, spanM * scale));
+  flyToGeo(center, height);
+}
+
+export function frameSite(site: Site) {
+  frameGeoPoints(site, site.boundary.length ? site.boundary : [site.center], 110, 3.2);
+}
+
+
+export type CameraControl =
+  | "zoom-in"
+  | "zoom-out"
+  | "rotate-left"
+  | "rotate-right"
+  | "pan-left"
+  | "pan-right"
+  | "pan-up"
+  | "pan-down";
+
+export function controlCamera(action: CameraControl) {
+  const viewer = window.viewer;
+  const Cesium = window.Cesium;
+  const camera = viewer?.camera;
+  if (!camera || !Cesium) return;
+
+  const height = Math.max(30, Number(camera.positionCartographic?.height) || 220);
+  const moveAmount = Math.max(3, Math.min(120, height * 0.06));
+  const zoomAmount = Math.max(8, Math.min(180, height * 0.18));
+  const turn = Cesium.Math.toRadians(12);
+
+  switch (action) {
+    case "zoom-in":
+      camera.zoomIn(zoomAmount);
+      break;
+    case "zoom-out":
+      camera.zoomOut(zoomAmount);
+      break;
+    case "rotate-left":
+      camera.setView({
+        destination: camera.positionWC,
+        orientation: { heading: camera.heading - turn, pitch: camera.pitch, roll: camera.roll },
+      });
+      break;
+    case "rotate-right":
+      camera.setView({
+        destination: camera.positionWC,
+        orientation: { heading: camera.heading + turn, pitch: camera.pitch, roll: camera.roll },
+      });
+      break;
+    case "pan-left":
+      camera.moveLeft(moveAmount);
+      break;
+    case "pan-right":
+      camera.moveRight(moveAmount);
+      break;
+    case "pan-up":
+      camera.moveUp(moveAmount);
+      break;
+    case "pan-down":
+      camera.moveDown(moveAmount);
+      break;
+  }
+}
+
+export function frameWorkspace(
+  site: Site,
+  scenarios: Scenario[],
+  viewpoint?: Viewpoint,
+) {
+  const points: GeoPoint[] = [...site.boundary];
+  scenarios.forEach((scenario) => {
+    rotatedFootprintPoints(scenario.mass).forEach((point) => {
+      points.push(localPointToGeo(site.center, {
+        xM: point.xM + scenario.mass.position.eastM,
+        yM: point.yM + scenario.mass.position.northM,
+      }));
+    });
+  });
+  if (viewpoint) points.push(viewpoint.point);
+  frameGeoPoints(site, points.length ? points : [site.center], 140, 3.1);
 }
 
 export function renderSite(site: Site) {
   const viewer = window.viewer;
   const Cesium = window.Cesium;
   if (!viewer?.entities || !Cesium) return;
+
   if (siteEntity) viewer.entities.remove(siteEntity);
+  if (siteOutlineEntity) viewer.entities.remove(siteOutlineEntity);
+  if (siteLabelEntity) viewer.entities.remove(siteLabelEntity);
+  siteEntity = undefined;
+  siteOutlineEntity = undefined;
+  siteLabelEntity = undefined;
+
   if (site.boundary.length < 3) return;
+
   siteEntity = viewer.entities.add({
     name: site.name,
     polygon: {
       hierarchy: Cesium.Cartesian3.fromDegreesArray(flattenGeo(site.boundary)),
       height: 0,
-      material: Cesium.Color.fromCssColorString("#ffcb6b").withAlpha(0.10),
-      outline: true,
-      outlineColor: Cesium.Color.fromCssColorString("#ffcb6b").withAlpha(0.95),
+      material: Cesium.Color.fromCssColorString("#55d7c8").withAlpha(0.10),
+      outline: false,
+    },
+  });
+
+  const closedBoundary = [...site.boundary, site.boundary[0]];
+  siteOutlineEntity = viewer.entities.add({
+    name: "SpaceLab selected site boundary",
+    polyline: {
+      positions: Cesium.Cartesian3.fromDegreesArray(flattenGeo(closedBoundary)),
+      width: 4,
+      material: Cesium.Color.fromCssColorString("#55d7c8").withAlpha(0.98),
+      clampToGround: true,
+    },
+  });
+
+  siteLabelEntity = viewer.entities.add({
+    name: "SpaceLab selected site label",
+    position: Cesium.Cartesian3.fromDegrees(site.center.lon, site.center.lat),
+    point: {
+      pixelSize: 8,
+      color: Cesium.Color.fromCssColorString("#55d7c8"),
+      outlineColor: Cesium.Color.BLACK.withAlpha(0.8),
       outlineWidth: 2,
+      heightReference: Cesium.HeightReference?.CLAMP_TO_GROUND,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    label: {
+      text: "선택 부지",
+      font: "600 12px sans-serif",
+      fillColor: Cesium.Color.WHITE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.fromCssColorString("#0f151c").withAlpha(0.88),
+      backgroundPadding: new Cesium.Cartesian2(8, 5),
+      pixelOffset: new Cesium.Cartesian2(0, -22),
+      heightReference: Cesium.HeightReference?.CLAMP_TO_GROUND,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
     },
   });
 }
@@ -417,6 +573,8 @@ function analysisObjectsToExclude() {
     if (value?.shadow) excluded.push(value.shadow);
   });
   if (siteEntity) excluded.push(siteEntity);
+  if (siteOutlineEntity) excluded.push(siteOutlineEntity);
+  if (siteLabelEntity) excluded.push(siteLabelEntity);
   if (draftEntity) excluded.push(draftEntity);
   if (sunStudyEntity) excluded.push(sunStudyEntity);
   if (viewpointEntity) excluded.push(viewpointEntity);
@@ -494,6 +652,117 @@ export async function sampleSceneSunContext(
     supported: true,
     blockedTimes,
     maxDistanceM,
+    sampleStepM,
+    source: "vworld-3d-scene",
+  };
+}
+
+
+
+export type ViewImpactResult = {
+  supported: boolean;
+  visibleSamples: number;
+  totalSamples: number;
+  visibleRatioPct: number;
+  classification: "mostly-visible" | "partially-visible" | "mostly-occluded" | "unsupported";
+  blockedSampleIds: string[];
+  sampleStepM: number;
+  source: "vworld-3d-scene" | "unsupported";
+};
+
+export async function sampleViewImpact(
+  viewpoint: Viewpoint,
+  site: Site,
+  mass: BuildingMass,
+  options: { sampleStepM?: number; clearanceM?: number } = {},
+): Promise<ViewImpactResult> {
+  const viewer = window.viewer;
+  const Cesium = window.Cesium;
+  const scene = viewer?.scene;
+  const sampleStepM = Math.max(3, options.sampleStepM ?? 8);
+  const clearanceM = Math.max(0.1, options.clearanceM ?? 0.75);
+
+  if (!scene || !Cesium || !scene.sampleHeightSupported || typeof scene.sampleHeightMostDetailed !== "function") {
+    return {
+      supported: false,
+      visibleSamples: 0,
+      totalSamples: 0,
+      visibleRatioPct: 0,
+      classification: "unsupported",
+      blockedSampleIds: [],
+      sampleStepM,
+      source: "unsupported",
+    };
+  }
+
+  const targets = viewTargetSamples(site, mass);
+  const eyeGround = terrainHeight(viewpoint.point);
+  const eyeHeight = eyeGround + Math.max(1.2, viewpoint.eyeHeightM);
+  const positions: any[] = [];
+  const ranges: { id: string; start: number; end: number }[] = [];
+
+  for (const target of targets) {
+    const local = geoPointToLocal(viewpoint.point, target.point);
+    const distanceM = Math.hypot(local.xM, local.yM);
+    const targetGround = terrainHeight(target.point);
+    const targetHeight = targetGround + Math.max(0, mass.heightM * target.heightFraction);
+
+    if (!Number.isFinite(distanceM) || distanceM < 1) {
+      ranges.push({ id: target.id, start: positions.length, end: positions.length });
+      continue;
+    }
+
+    const start = positions.length;
+    const maxPathDistance = Math.max(0, distanceM * 0.92);
+    for (let pathDistanceM = sampleStepM; pathDistanceM < maxPathDistance; pathDistanceM += sampleStepM) {
+      const ratio = pathDistanceM / distanceM;
+      const geo = localPointToGeo(viewpoint.point, {
+        xM: local.xM * ratio,
+        yM: local.yM * ratio,
+      });
+      const cartographic = Cesium.Cartographic.fromDegrees(geo.lon, geo.lat);
+      (cartographic as any).__spaceLabRayHeight = eyeHeight + (targetHeight - eyeHeight) * ratio;
+      positions.push(cartographic);
+    }
+    ranges.push({ id: target.id, start, end: positions.length });
+  }
+
+  const sampled = positions.length
+    ? await scene.sampleHeightMostDetailed(positions, analysisObjectsToExclude(), 0.5)
+    : [];
+
+  const blockedSampleIds: string[] = [];
+  for (const range of ranges) {
+    let blocked = false;
+    for (let index = range.start; index < range.end; index += 1) {
+      const samplePosition = sampled[index];
+      const sampledHeight = samplePosition?.height;
+      const rayHeight = Number((positions[index] as any).__spaceLabRayHeight);
+      if (!Number.isFinite(sampledHeight) || !Number.isFinite(rayHeight)) continue;
+      if (sampledHeight > rayHeight + clearanceM) {
+        blocked = true;
+        break;
+      }
+    }
+    if (blocked) blockedSampleIds.push(range.id);
+  }
+
+  const totalSamples = targets.length;
+  const visibleSamples = Math.max(0, totalSamples - blockedSampleIds.length);
+  const visibleRatioPct = totalSamples > 0 ? (visibleSamples / totalSamples) * 100 : 0;
+  const classification = visibleRatioPct >= 75
+    ? "mostly-visible"
+    : visibleRatioPct >= 25
+      ? "partially-visible"
+      : "mostly-occluded";
+
+  return {
+    supported: true,
+    visibleSamples,
+    totalSamples,
+    visibleRatioPct,
+    classification,
+    blockedSampleIds,
     sampleStepM,
     source: "vworld-3d-scene",
   };
