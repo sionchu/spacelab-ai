@@ -7,6 +7,7 @@ import {
 } from "./model";
 import { viewTargetSamples } from "./analysis";
 import type { SunStudySample } from "./analysis";
+import type { ConceptCameraState } from "./concept-view";
 import type { BuildingMass, GeoPoint, LocalPoint, Scenario, Site, Viewpoint } from "./types";
 
 declare global {
@@ -612,6 +613,51 @@ export async function sampleViewImpact(
     sampleStepM,
     source: "vworld-3d-scene",
   };
+}
+
+
+
+export function getCurrentCameraState(): ConceptCameraState | undefined {
+  const viewer = window.viewer;
+  const Cesium = window.Cesium;
+  if (!viewer?.camera || !Cesium) return undefined;
+
+  const camera = viewer.camera;
+  const cartographic = Cesium.Cartographic.fromCartesian(camera.positionWC ?? camera.position);
+  if (!cartographic) return undefined;
+
+  return {
+    lon: Cesium.Math.toDegrees(cartographic.longitude),
+    lat: Cesium.Math.toDegrees(cartographic.latitude),
+    heightM: cartographic.height,
+    headingDeg: Cesium.Math.toDegrees(camera.heading ?? 0),
+    pitchDeg: Cesium.Math.toDegrees(camera.pitch ?? 0),
+    rollDeg: Cesium.Math.toDegrees(camera.roll ?? 0),
+  };
+}
+
+export async function captureVWorldSnapshot(): Promise<Blob | undefined> {
+  const viewer = window.viewer;
+  const canvas: HTMLCanvasElement | undefined = viewer?.scene?.canvas;
+  if (!canvas) return undefined;
+
+  try {
+    viewer.scene?.render?.();
+    return await new Promise<Blob | undefined>((resolve) => {
+      if (typeof canvas.toBlob === "function") {
+        try {
+          canvas.toBlob((blob) => resolve(blob ?? undefined), "image/png");
+          return;
+        } catch {
+          resolve(undefined);
+          return;
+        }
+      }
+      resolve(undefined);
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 export function setShadowTime(localDateTime: string, timeZoneOffsetMinutes = siteTimeZoneOffsetMinutes) {
