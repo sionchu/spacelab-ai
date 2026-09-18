@@ -346,3 +346,111 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .canvas-mode-viewpoint .vworld-canvas { cursor: crosshair; }
 
 .viewpoint-actions .quiet-button:disabled { opacity: .5; cursor: default; }
+
+
+/* Analysis visualization v1 */
+.sun-viz-block {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--color-border);
+}
+.sun-exposure-viz {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.sun-exposure-label {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sun-exposure-track {
+  min-width: 0;
+  height: 12px;
+  display: flex;
+  gap: 1px;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  background: var(--color-app-chrome);
+}
+.sun-segment {
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+}
+button.sun-segment { cursor: pointer; }
+.sun-segment.sun { background: #d8ad58; }
+.sun-segment.planned-shadow { background: var(--color-scenario-a); }
+.sun-segment.city-shadow { background: #59616b; }
+.sun-segment.night { background: #24292f; }
+.sun-segment.active {
+  box-shadow: inset 0 0 0 1px #fff, inset 0 0 0 2px rgba(0, 0, 0, .45);
+}
+.sun-exposure-legend {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  color: var(--color-text-tertiary);
+  font-size: 8px;
+}
+.sun-exposure-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.sun-key {
+  width: 7px;
+  height: 7px;
+  display: inline-block;
+  border-radius: 1px;
+}
+.sun-key.sun { background: #d8ad58; }
+.sun-key.planned-shadow { background: var(--color-scenario-a); }
+.sun-key.city-shadow { background: #59616b; }
+
+.view-impact-viz {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+}
+.view-impact-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.view-impact-head span {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+}
+.view-impact-head strong {
+  color: var(--color-text-primary);
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.view-impact-track {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--color-app-chrome);
+  box-shadow: inset 0 0 0 1px var(--color-border);
+}
+.view-impact-track > span {
+  display: block;
+  height: 100%;
+  background: var(--color-scenario-b);
+}
+.view-impact-viz small {
+  color: var(--color-text-tertiary);
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}

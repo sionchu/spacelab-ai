@@ -58,3 +58,15 @@ View Impact reuses the canonical `viewpoint`, `Site`, and `BuildingMass` state.
 - UI and WebMCP call the same runtime scene-analysis function.
 
 This is a geometric comparison aid. The visibility percentage is a sampled estimate, not facade-area measurement, legal view-right determination, or planning approval.
+
+
+## Analysis Visualization v1
+
+`src/analysis-visuals.tsx` is presentation-only.
+
+- Direct-sun samples are rendered as a shared 09:00–18:00 exposure strip.
+- Planned-mass shadow and VWorld city-context obstruction remain visually distinct.
+- Compare mode renders A/B exposure rows on the same time scale.
+- View Impact uses a simple 0–100% visibility bar backed by the existing sampled runtime result.
+
+This layer does not recalculate or reinterpret analysis results and introduces no charting dependency.
