@@ -22,6 +22,8 @@ let scriptPromise: Promise<void> | null = null;
 let viewerPromise: Promise<any> | null = null;
 const entities = new Map<string, any>();
 let siteEntity: any;
+let siteOutlineEntity: any;
+let siteLabelEntity: any;
 let draftEntity: any;
 let sunStudyEntity: any;
 let viewpointEntity: any;
@@ -210,6 +212,62 @@ export function frameSite(site: Site) {
   frameGeoPoints(site, site.boundary.length ? site.boundary : [site.center], 110, 3.2);
 }
 
+
+export type CameraControl =
+  | "zoom-in"
+  | "zoom-out"
+  | "rotate-left"
+  | "rotate-right"
+  | "pan-left"
+  | "pan-right"
+  | "pan-up"
+  | "pan-down";
+
+export function controlCamera(action: CameraControl) {
+  const viewer = window.viewer;
+  const Cesium = window.Cesium;
+  const camera = viewer?.camera;
+  if (!camera || !Cesium) return;
+
+  const height = Math.max(30, Number(camera.positionCartographic?.height) || 220);
+  const moveAmount = Math.max(3, Math.min(120, height * 0.06));
+  const zoomAmount = Math.max(8, Math.min(180, height * 0.18));
+  const turn = Cesium.Math.toRadians(12);
+
+  switch (action) {
+    case "zoom-in":
+      camera.zoomIn(zoomAmount);
+      break;
+    case "zoom-out":
+      camera.zoomOut(zoomAmount);
+      break;
+    case "rotate-left":
+      camera.setView({
+        destination: camera.position,
+        orientation: { heading: camera.heading - turn, pitch: camera.pitch, roll: camera.roll },
+      });
+      break;
+    case "rotate-right":
+      camera.setView({
+        destination: camera.position,
+        orientation: { heading: camera.heading + turn, pitch: camera.pitch, roll: camera.roll },
+      });
+      break;
+    case "pan-left":
+      camera.moveLeft(moveAmount);
+      break;
+    case "pan-right":
+      camera.moveRight(moveAmount);
+      break;
+    case "pan-up":
+      camera.moveUp(moveAmount);
+      break;
+    case "pan-down":
+      camera.moveDown(moveAmount);
+      break;
+  }
+}
+
 export function frameWorkspace(
   site: Site,
   scenarios: Scenario[],
@@ -232,17 +290,58 @@ export function renderSite(site: Site) {
   const viewer = window.viewer;
   const Cesium = window.Cesium;
   if (!viewer?.entities || !Cesium) return;
+
   if (siteEntity) viewer.entities.remove(siteEntity);
+  if (siteOutlineEntity) viewer.entities.remove(siteOutlineEntity);
+  if (siteLabelEntity) viewer.entities.remove(siteLabelEntity);
+  siteEntity = undefined;
+  siteOutlineEntity = undefined;
+  siteLabelEntity = undefined;
+
   if (site.boundary.length < 3) return;
+
   siteEntity = viewer.entities.add({
     name: site.name,
     polygon: {
       hierarchy: Cesium.Cartesian3.fromDegreesArray(flattenGeo(site.boundary)),
       height: 0,
-      material: Cesium.Color.fromCssColorString("#ffcb6b").withAlpha(0.10),
-      outline: true,
-      outlineColor: Cesium.Color.fromCssColorString("#ffcb6b").withAlpha(0.95),
+      material: Cesium.Color.fromCssColorString("#55d7c8").withAlpha(0.10),
+      outline: false,
+    },
+  });
+
+  const closedBoundary = [...site.boundary, site.boundary[0]];
+  siteOutlineEntity = viewer.entities.add({
+    name: "SpaceLab selected site boundary",
+    polyline: {
+      positions: Cesium.Cartesian3.fromDegreesArray(flattenGeo(closedBoundary)),
+      width: 4,
+      material: Cesium.Color.fromCssColorString("#55d7c8").withAlpha(0.98),
+      clampToGround: true,
+    },
+  });
+
+  siteLabelEntity = viewer.entities.add({
+    name: "SpaceLab selected site label",
+    position: Cesium.Cartesian3.fromDegrees(site.center.lon, site.center.lat),
+    point: {
+      pixelSize: 8,
+      color: Cesium.Color.fromCssColorString("#55d7c8"),
+      outlineColor: Cesium.Color.BLACK.withAlpha(0.8),
       outlineWidth: 2,
+      heightReference: Cesium.HeightReference?.CLAMP_TO_GROUND,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    label: {
+      text: "선택 부지",
+      font: "600 12px sans-serif",
+      fillColor: Cesium.Color.WHITE,
+      showBackground: true,
+      backgroundColor: Cesium.Color.fromCssColorString("#0f151c").withAlpha(0.88),
+      backgroundPadding: new Cesium.Cartesian2(8, 5),
+      pixelOffset: new Cesium.Cartesian2(0, -22),
+      heightReference: Cesium.HeightReference?.CLAMP_TO_GROUND,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
     },
   });
 }
@@ -474,6 +573,8 @@ function analysisObjectsToExclude() {
     if (value?.shadow) excluded.push(value.shadow);
   });
   if (siteEntity) excluded.push(siteEntity);
+  if (siteOutlineEntity) excluded.push(siteOutlineEntity);
+  if (siteLabelEntity) excluded.push(siteLabelEntity);
   if (draftEntity) excluded.push(draftEntity);
   if (sunStudyEntity) excluded.push(sunStudyEntity);
   if (viewpointEntity) excluded.push(viewpointEntity);
