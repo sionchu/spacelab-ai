@@ -185,6 +185,7 @@ export default function App() {
   const [workspaceMode, setWorkspaceMode] = useState<"design" | "compare">("design");
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [mobileToolPanel, setMobileToolPanel] = useState<"site" | "building" | "analysis" | "scenario" | null>(null);
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("inspect");
   const [draftPoints, setDraftPoints] = useState<LocalPoint[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -461,6 +462,7 @@ export default function App() {
         onClick={() => {
           setNavigatorOpen((open) => !open);
           setInspectorOpen(false);
+          setMobileToolPanel(null);
         }}
       >☰</button>
       <nav className="mode-switch" aria-label="작업 모드">
@@ -478,17 +480,19 @@ export default function App() {
         onClick={() => {
           setInspectorOpen((open) => !open);
           setNavigatorOpen(false);
+          setMobileToolPanel(null);
         }}
       >설정</button>
     </header>
 
     <section className="workspace">
       <button
-        className={`mobile-scrim ${navigatorOpen || inspectorOpen ? "open" : ""}`}
+        className={`mobile-scrim ${navigatorOpen || inspectorOpen || mobileToolPanel ? "open" : ""}`}
         aria-label="패널 닫기"
         onClick={() => {
           setNavigatorOpen(false);
           setInspectorOpen(false);
+          setMobileToolPanel(null);
         }}
       />
       <aside className={`left-panel panel ${navigatorOpen ? "open" : ""}`}>
@@ -589,6 +593,76 @@ export default function App() {
           </> : <div className="analysis-empty"><strong>먼저 부지를 선택해보세요.</strong><span>주소 검색 → 필지 선택 → 건물 배치 → 일조·조망 비교</span></div>}
         </section>
       </section>
+
+
+      <section className={`mobile-tool-sheet ${mobileToolPanel ? "open" : ""}`} aria-label="모바일 작업 메뉴">
+        <div className="mobile-tool-sheet-handle" aria-hidden="true"></div>
+        {mobileToolPanel === "site" && <div className="mobile-tool-content">
+          <div className="mobile-tool-head"><div><span>부지</span><strong>검토할 위치를 정하세요</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <form className="mobile-site-search" onSubmit={handleSearch}>
+            <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={apiKey ? "주소나 지번 검색" : "VWorld 연결 필요"} aria-label="주소 검색" />
+            <button type="submit" disabled={searching || !apiKey}>{searching ? "…" : "검색"}</button>
+          </form>
+          {searchResults.length > 0 && <div className="mobile-search-results">
+            {searchResults.map((result) => <button key={result.id} onClick={() => { void selectSearchResult(result); setMobileToolPanel(null); }}><strong>{result.title}</strong><span>{result.address}</span></button>)}
+          </div>}
+          <button className="mobile-action primary-action" onClick={() => { setCanvasMode("pick-site"); setMobileToolPanel(null); }}>⌖ 지도에서 필지 선택</button>
+        </div>}
+
+        {mobileToolPanel === "building" && <div className="mobile-tool-content">
+          <div className="mobile-tool-head"><div><span>건물</span><strong>{active ? `${active.id}안 편집` : "첫 건물을 만들어보세요"}</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <div className="mobile-action-grid">
+            <button className="mobile-action" onClick={() => { createRectangle(); setMobileToolPanel(null); }}><b>＋</b><span>사각형</span></button>
+            <button className="mobile-action" onClick={() => { startPolygon(); setMobileToolPanel(null); }}><b>✎</b><span>자유형</span></button>
+            <button className="mobile-action" disabled={!active} onClick={() => { if (active) setCanvasMode("move-mass"); setMobileToolPanel(null); }}><b>↔</b><span>이동</span></button>
+            <button className="mobile-action danger" disabled={!active} onClick={() => { if (active) actions.deleteScenario(active.id, "human"); setMobileToolPanel(null); }}><b>−</b><span>삭제</span></button>
+          </div>
+          {active && <button className="mobile-action secondary-action" onClick={() => { setInspectorOpen(true); setMobileToolPanel(null); }}>높이·층수·회전 상세 설정</button>}
+        </div>}
+
+        {mobileToolPanel === "analysis" && <div className="mobile-tool-content">
+          <div className="mobile-tool-head"><div><span>분석</span><strong>일조와 조망을 확인하세요</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <div className="mobile-analysis-actions">
+            <button className="mobile-analysis-card" disabled={!active} onClick={() => { if (active) setCanvasMode("sun-point"); setMobileToolPanel(null); }}>
+              <span className="mobile-analysis-icon">☀</span>
+              <span><strong>일조 분석</strong><small>{activeSunStudy ? `현재 ${formatMinutesKo(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes)}` : "분석 지점을 선택하세요"}</small></span>
+            </button>
+            <button className="mobile-analysis-card" onClick={() => { setCanvasMode("viewpoint"); setMobileToolPanel(null); }}>
+              <span className="mobile-analysis-icon">◉</span>
+              <span><strong>조망 위치 선택</strong><small>{state.viewpoint ? `눈높이 ${state.viewpoint.eyeHeightM.toFixed(1)}m 설정됨` : "지도에서 관찰 위치를 찍으세요"}</small></span>
+            </button>
+          </div>
+          {state.viewpoint && active && <div className="mobile-viewpoint-summary">
+            <div>
+              <span>현재 조망점</span>
+              <strong>{viewImpactResults[active.id] ? `예상 가시율 ${viewImpactResults[active.id].visibleRatioPct.toFixed(0)}%` : "분석 전"}</strong>
+            </div>
+            <div className="mobile-inline-actions">
+              <button onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>이 위치에서 보기</button>
+              <button className="accent" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "분석 중…" : "조망 분석"}</button>
+            </div>
+          </div>}
+        </div>}
+
+        {mobileToolPanel === "scenario" && <div className="mobile-tool-content">
+          <div className="mobile-tool-head"><div><span>대안</span><strong>{state.scenarios.length ? `${state.scenarios.length}개 대안` : "대안이 없습니다"}</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <div className="mobile-scenario-summary">
+            {active ? <><span className="mobile-scenario-id">{active.id}</span><div><strong>{scenarioName(active.id, active.name)}</strong><small>{active.mass.heightM}m · {active.mass.floors}층</small></div></> : <span>먼저 건물을 만들어보세요.</span>}
+          </div>
+          <div className="mobile-action-list">
+            <button onClick={() => { setNavigatorOpen(true); setMobileToolPanel(null); }}>대안 목록 보기 <span>›</span></button>
+            <button disabled={!active} onClick={() => { if (active) actions.cloneScenario(active.id, undefined, "human"); setMobileToolPanel(null); }}>현재 안에서 새 대안 만들기 <span>＋</span></button>
+            <button disabled={!active || state.scenarios.length < 2} onClick={() => { setWorkspaceMode("compare"); setMobileToolPanel(null); }}>A/B 비교 열기 <span>↔</span></button>
+          </div>
+        </div>}
+      </section>
+
+      <nav className="mobile-workbar" aria-label="주요 작업">
+        <button className={mobileToolPanel === "site" ? "active" : ""} onClick={() => { setMobileToolPanel(mobileToolPanel === "site" ? null : "site"); setNavigatorOpen(false); setInspectorOpen(false); }}><span>⌖</span><b>부지</b></button>
+        <button className={mobileToolPanel === "building" ? "active" : ""} onClick={() => { setMobileToolPanel(mobileToolPanel === "building" ? null : "building"); setNavigatorOpen(false); setInspectorOpen(false); }}><span>▱</span><b>건물</b></button>
+        <button className={mobileToolPanel === "analysis" ? "active" : ""} onClick={() => { setMobileToolPanel(mobileToolPanel === "analysis" ? null : "analysis"); setNavigatorOpen(false); setInspectorOpen(false); }}><span>◎</span><b>분석</b></button>
+        <button className={mobileToolPanel === "scenario" ? "active" : ""} onClick={() => { setMobileToolPanel(mobileToolPanel === "scenario" ? null : "scenario"); setNavigatorOpen(false); setInspectorOpen(false); }}><span>◇</span><b>대안</b></button>
+      </nav>
 
       <aside className={`right-panel panel ${inspectorOpen ? "open" : ""}`}>
         {active && activeShadow ? <>
