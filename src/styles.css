@@ -1273,3 +1273,224 @@ button.sun-segment { cursor: pointer; }
     font-size: 8px;
   }
 }
+
+
+/* Concept View v2 */
+.map-utility-toolbar .concept-entry {
+  border-color: rgba(127, 158, 245, .18);
+  background: rgba(127, 158, 245, .08);
+  color: #c8d4ff;
+}
+
+.concept-sheet {
+  position: absolute;
+  z-index: 34;
+  right: 14px;
+  top: 14px;
+  width: min(390px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
+  display: grid;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 10px 14px 14px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 16px;
+  background: #151e27;
+  box-shadow: 0 18px 46px rgba(0,0,0,.42);
+}
+.concept-sheet-handle { display: none; }
+.concept-sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.concept-sheet-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.concept-sheet-head span {
+  color: #91a8fa;
+  font-size: 10px;
+  font-weight: 760;
+}
+.concept-sheet-head strong {
+  overflow: hidden;
+  color: #f1f5f8;
+  font-size: 17px;
+  font-weight: 740;
+  letter-spacing: -.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.concept-sheet-head > button {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  background: #202c37;
+  color: #aeb8c3;
+  font-size: 18px;
+  cursor: pointer;
+}
+.concept-note {
+  margin: 0;
+  color: #8f9ba7;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.concept-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.concept-fields label {
+  display: grid;
+  gap: 5px;
+}
+.concept-fields label > span {
+  color: #7f8d99;
+  font-size: 9px;
+  font-weight: 650;
+}
+.concept-fields select {
+  min-width: 0;
+  min-height: 38px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  padding: 0 9px;
+  background: #0f161e;
+  color: #e3e8ec;
+  font-size: 11px;
+}
+.concept-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.concept-actions button {
+  min-height: 40px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 10px;
+  background: #18232d;
+  color: #d4dce2;
+  font-size: 11px;
+  font-weight: 680;
+  cursor: pointer;
+}
+.concept-actions button.primary {
+  width: auto;
+  border-color: rgba(127,158,245,.24);
+  background: rgba(127,158,245,.13);
+  color: #dbe3ff;
+}
+.concept-actions button:disabled {
+  opacity: .36;
+  cursor: default;
+}
+.concept-preview {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 12px;
+  background: #0d141b;
+}
+.concept-preview img {
+  display: block;
+  width: 100%;
+  max-height: 280px;
+  object-fit: cover;
+}
+.concept-preview > span {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(10,15,20,.82);
+  color: #d8e0e6;
+  font-size: 9px;
+}
+.concept-preview.generated {
+  border-color: rgba(127,158,245,.24);
+}
+.concept-provider-status {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 10px;
+  background: #101820;
+}
+.concept-provider-status span {
+  color: #a1aeba;
+  font-size: 10px;
+  font-weight: 700;
+}
+.concept-provider-status small {
+  color: #6f7d89;
+  font-size: 9px;
+  line-height: 1.4;
+}
+.concept-provider-status.ready {
+  border-color: rgba(103,217,155,.16);
+  background: rgba(103,217,155,.05);
+}
+.concept-provider-status.ready span { color: #9be8ba; }
+.concept-message {
+  padding: 8px 9px;
+  border-radius: 9px;
+  background: #101820;
+  color: #9faab4;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.concept-brief {
+  color: #8e9aa6;
+  font-size: 9px;
+}
+.concept-brief summary {
+  color: #aab5bf;
+  cursor: pointer;
+}
+.concept-brief p {
+  margin: 7px 0 0;
+  line-height: 1.55;
+}
+
+.mobile-analysis-card.concept-card .mobile-analysis-icon.concept {
+  color: #c8d4ff;
+  background: rgba(127,158,245,.12);
+}
+
+@media (max-width: 720px) {
+  .concept-sheet {
+    top: auto;
+    right: 8px;
+    bottom: calc(72px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    max-height: min(70dvh, 600px);
+    padding: 8px 14px 14px;
+    border-radius: 18px;
+  }
+  .concept-sheet-handle {
+    width: 36px;
+    height: 4px;
+    display: block;
+    margin: 0 auto 1px;
+    border-radius: 999px;
+    background: #46525e;
+  }
+  .concept-sheet-head strong { font-size: 16px; }
+  .concept-note { font-size: 10px; }
+  .concept-fields { grid-template-columns: 1fr 1fr; }
+  .concept-preview img { max-height: 240px; }
+}
+
+@media (max-width: 390px) {
+  .concept-fields { grid-template-columns: 1fr; }
+  .concept-actions { grid-template-columns: 1fr; }
+  .concept-preview img { max-height: 205px; }
+}
