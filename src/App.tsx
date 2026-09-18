@@ -4,6 +4,7 @@ import { directSunStudy, planningMetrics } from "./analysis";
 import { SunExposureLegend, SunExposureTimeline, ViewImpactBar } from "./analysis-visuals";
 import { buildingPresets } from "./building-presets";
 import type { BuildingPreset } from "./building-presets";
+import { ConceptViewPanel } from "./concept-view-panel";
 import {
   computeShadowPolygon,
   estimateGfa,
@@ -41,6 +42,7 @@ import "./styles.css";
 
 const apiKey = import.meta.env.VITE_VWORLD_API_KEY as string | undefined;
 const vworldDomain = import.meta.env.VITE_VWORLD_DOMAIN as string | undefined;
+const conceptViewEndpoint = import.meta.env.VITE_CONCEPT_VIEW_ENDPOINT as string | undefined;
 
 type CanvasMode = "inspect" | "pick-site" | "draw-polygon" | "move-mass" | "sun-point" | "viewpoint";
 
@@ -193,6 +195,7 @@ export default function App() {
   const [mobileToolPanel, setMobileToolPanel] = useState<"site" | "building" | "analysis" | "scenario" | null>(null);
   const [buildingCreateMode, setBuildingCreateMode] = useState<"preset" | "custom">("preset");
   const [desktopBuildingMenuOpen, setDesktopBuildingMenuOpen] = useState(false);
+  const [conceptViewOpen, setConceptViewOpen] = useState(false);
   const [canvasMode, setCanvasMode] = useState<CanvasMode>("inspect");
   const [draftPoints, setDraftPoints] = useState<LocalPoint[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -519,13 +522,14 @@ export default function App() {
 
     <section className="workspace">
       <button
-        className={`mobile-scrim ${navigatorOpen || inspectorOpen || mobileToolPanel ? "open" : ""}`}
+        className={`mobile-scrim ${navigatorOpen || inspectorOpen || mobileToolPanel || conceptViewOpen ? "open" : ""}`}
         aria-label="패널 닫기"
         onClick={() => {
           setNavigatorOpen(false);
           setInspectorOpen(false);
           setMobileToolPanel(null);
           setDesktopBuildingMenuOpen(false);
+          setConceptViewOpen(false);
         }}
       />
       <aside className={`left-panel panel ${navigatorOpen ? "open" : ""}`}>
@@ -604,6 +608,7 @@ export default function App() {
           <button onClick={() => controlCamera("zoom-in")} disabled={!vworldReady}>확대</button>
           <button onClick={() => frameSite(state.site)} disabled={!vworldReady}>선택 부지</button>
           <button onClick={frameCurrentWorkspace} disabled={!vworldReady}>전체 보기</button>
+          <button className="concept-entry" onClick={() => active && setConceptViewOpen(true)} disabled={!active}>컨셉 보기</button>
         </div>
 
         {canvasMode !== "inspect" && <div className="canvas-tool-hint">
@@ -741,6 +746,10 @@ export default function App() {
               <span className="mobile-analysis-icon">◉</span>
               <span><strong>조망 위치 선택</strong><small>{state.viewpoint ? `눈높이 ${state.viewpoint.eyeHeightM.toFixed(1)}m 설정됨` : "지도에서 관찰 위치를 찍으세요"}</small></span>
             </button>
+            <button className="mobile-analysis-card concept-card" disabled={!active} onClick={() => { if (active) setConceptViewOpen(true); setMobileToolPanel(null); }}>
+              <span className="mobile-analysis-icon concept">▧</span>
+              <span><strong>컨셉 보기</strong><small>현재 배치와 3D 화면으로 건축 컨셉 이미지 준비</small></span>
+            </button>
           </div>
           {state.viewpoint && active && <div className="mobile-viewpoint-summary">
             <div>
@@ -766,6 +775,14 @@ export default function App() {
           </div>
         </div>}
       </section>
+
+      {conceptViewOpen && active && <ConceptViewPanel
+        site={state.site}
+        scenario={active}
+        viewpoint={state.viewpoint}
+        endpoint={conceptViewEndpoint}
+        onClose={() => setConceptViewOpen(false)}
+      />}
 
       <nav className="mobile-workbar" aria-label="주요 작업">
         <button className={mobileToolPanel === "site" ? "active" : ""} onClick={() => { setMobileToolPanel(mobileToolPanel === "site" ? null : "site"); setNavigatorOpen(false); setInspectorOpen(false); }}><span>⌖</span><b>부지</b></button>
