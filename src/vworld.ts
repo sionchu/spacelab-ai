@@ -1,4 +1,11 @@
-import { computeShadowPolygon, localPointToGeo, rotatedFootprintPoints, siteTimeZoneOffsetMinutes } from "./model";
+import {
+  computeShadowPolygon,
+  geoPointToLocal,
+  localPointToGeo,
+  rotatedFootprintPoints,
+  siteTimeZoneOffsetMinutes,
+} from "./model";
+import { viewTargetSamples } from "./analysis";
 import type { SunStudySample } from "./analysis";
 import type { BuildingMass, GeoPoint, LocalPoint, Scenario, Site, Viewpoint } from "./types";
 
@@ -494,6 +501,117 @@ export async function sampleSceneSunContext(
     supported: true,
     blockedTimes,
     maxDistanceM,
+    sampleStepM,
+    source: "vworld-3d-scene",
+  };
+}
+
+
+
+export type ViewImpactResult = {
+  supported: boolean;
+  visibleSamples: number;
+  totalSamples: number;
+  visibleRatioPct: number;
+  classification: "mostly-visible" | "partially-visible" | "mostly-occluded" | "unsupported";
+  blockedSampleIds: string[];
+  sampleStepM: number;
+  source: "vworld-3d-scene" | "unsupported";
+};
+
+export async function sampleViewImpact(
+  viewpoint: Viewpoint,
+  site: Site,
+  mass: BuildingMass,
+  options: { sampleStepM?: number; clearanceM?: number } = {},
+): Promise<ViewImpactResult> {
+  const viewer = window.viewer;
+  const Cesium = window.Cesium;
+  const scene = viewer?.scene;
+  const sampleStepM = Math.max(3, options.sampleStepM ?? 8);
+  const clearanceM = Math.max(0.1, options.clearanceM ?? 0.75);
+
+  if (!scene || !Cesium || !scene.sampleHeightSupported || typeof scene.sampleHeightMostDetailed !== "function") {
+    return {
+      supported: false,
+      visibleSamples: 0,
+      totalSamples: 0,
+      visibleRatioPct: 0,
+      classification: "unsupported",
+      blockedSampleIds: [],
+      sampleStepM,
+      source: "unsupported",
+    };
+  }
+
+  const targets = viewTargetSamples(site, mass);
+  const eyeGround = terrainHeight(viewpoint.point);
+  const eyeHeight = eyeGround + Math.max(1.2, viewpoint.eyeHeightM);
+  const positions: any[] = [];
+  const ranges: { id: string; start: number; end: number }[] = [];
+
+  for (const target of targets) {
+    const local = geoPointToLocal(viewpoint.point, target.point);
+    const distanceM = Math.hypot(local.xM, local.yM);
+    const targetGround = terrainHeight(target.point);
+    const targetHeight = targetGround + Math.max(0, mass.heightM * target.heightFraction);
+
+    if (!Number.isFinite(distanceM) || distanceM < 1) {
+      ranges.push({ id: target.id, start: positions.length, end: positions.length });
+      continue;
+    }
+
+    const start = positions.length;
+    const maxPathDistance = Math.max(0, distanceM * 0.92);
+    for (let pathDistanceM = sampleStepM; pathDistanceM < maxPathDistance; pathDistanceM += sampleStepM) {
+      const ratio = pathDistanceM / distanceM;
+      const geo = localPointToGeo(viewpoint.point, {
+        xM: local.xM * ratio,
+        yM: local.yM * ratio,
+      });
+      const cartographic = Cesium.Cartographic.fromDegrees(geo.lon, geo.lat);
+      (cartographic as any).__spaceLabRayHeight = eyeHeight + (targetHeight - eyeHeight) * ratio;
+      positions.push(cartographic);
+    }
+    ranges.push({ id: target.id, start, end: positions.length });
+  }
+
+  const sampled = positions.length
+    ? await scene.sampleHeightMostDetailed(positions, analysisObjectsToExclude(), 0.5)
+    : [];
+
+  const blockedSampleIds: string[] = [];
+  for (const range of ranges) {
+    let blocked = false;
+    for (let index = range.start; index < range.end; index += 1) {
+      const samplePosition = sampled[index];
+      const sampledHeight = samplePosition?.height;
+      const rayHeight = Number((positions[index] as any).__spaceLabRayHeight);
+      if (!Number.isFinite(sampledHeight) || !Number.isFinite(rayHeight)) continue;
+      if (sampledHeight > rayHeight + clearanceM) {
+        blocked = true;
+        break;
+      }
+    }
+    if (blocked) blockedSampleIds.push(range.id);
+  }
+
+  const totalSamples = targets.length;
+  const visibleSamples = Math.max(0, totalSamples - blockedSampleIds.length);
+  const visibleRatioPct = totalSamples > 0 ? (visibleSamples / totalSamples) * 100 : 0;
+  const classification = visibleRatioPct >= 75
+    ? "mostly-visible"
+    : visibleRatioPct >= 25
+      ? "partially-visible"
+      : "mostly-occluded";
+
+  return {
+    supported: true,
+    visibleSamples,
+    totalSamples,
+    visibleRatioPct,
+    classification,
+    blockedSampleIds,
     sampleStepM,
     source: "vworld-3d-scene",
   };
