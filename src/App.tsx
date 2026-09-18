@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createApplicationActions } from "./actions";
 import { directSunStudy, planningMetrics } from "./analysis";
+import { SunExposureLegend, SunExposureTimeline, ViewImpactBar } from "./analysis-visuals";
 import {
   computeShadowPolygon,
   estimateGfa,
@@ -25,6 +26,7 @@ import {
   renderScenario,
   renderSite,
   sampleSceneSunContext,
+  sampleViewImpact,
   setMapPointHandler,
   setShadowMode,
   setShadowTime,
@@ -192,6 +194,14 @@ export default function App() {
   const [siteMessage, setSiteMessage] = useState<string | null>(null);
   const [sceneSunBusy, setSceneSunBusy] = useState(false);
   const [sceneSunContext, setSceneSunContext] = useState<{ supported: boolean; blockedTimes: string[]; source: string } | null>(null);
+  const [viewImpactBusy, setViewImpactBusy] = useState(false);
+  const [viewImpactResults, setViewImpactResults] = useState<Record<string, {
+    supported: boolean;
+    visibleRatioPct: number;
+    visibleSamples: number;
+    totalSamples: number;
+    classification: string;
+  }>>({});
   stateRef.current = state;
 
   const actions = useMemo(() => createApplicationActions((action) => {
@@ -245,6 +255,7 @@ export default function App() {
       searchLocation,
       selectSiteAtPoint,
       sampleSunContext: (point, samples) => sampleSceneSunContext(point, samples),
+      sampleViewImpact: (viewpoint, site, mass) => sampleViewImpact(viewpoint, site, mass),
     });
     setWebMcp(registration.supported);
     return registration.dispose;
@@ -309,6 +320,10 @@ export default function App() {
   }, [activeSunStudy, sunStudyPoint, vworldReady]);
 
   useEffect(() => {
+    setViewImpactResults({});
+  }, [state.viewpoint, state.site.id, active?.mass, compare?.mass]);
+
+  useEffect(() => {
     if (!vworldReady || canvasMode === "inspect") return;
     const dispose = setMapPointHandler((point) => {
       if (canvasMode === "pick-site") {
@@ -354,6 +369,21 @@ export default function App() {
     });
     return dispose;
   }, [actions, active, canvasMode, selectSiteAtPoint, state.site, state.viewpoint, vworldReady]);
+
+  async function runViewImpact() {
+    if (!vworldReady || !state.viewpoint || !active) return;
+    setViewImpactBusy(true);
+    try {
+      const scenarios = compare ? [active, compare] : [active];
+      const entries = await Promise.all(scenarios.map(async (scenario) => {
+        const result = await sampleViewImpact(state.viewpoint!, state.site, scenario.mass);
+        return [scenario.id, result] as const;
+      }));
+      setViewImpactResults(Object.fromEntries(entries));
+    } finally {
+      setViewImpactBusy(false);
+    }
+  }
 
   async function handleSearch(event: FormEvent) {
     event.preventDefault();
@@ -536,9 +566,25 @@ export default function App() {
               <div className="analysis-fields"><label>날짜<input aria-label="그림자 날짜" type="date" value={activeDate} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, event.target.value, activeTime))} /></label><label>시간<input aria-label="그림자 시간" type="time" value={activeTime} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, activeDate, event.target.value))} /></label></div>
             </div>
             <div className="timeline"><span>09:00</span><input aria-label="그림자 시간대" type="range" min={540} max={1080} step={15} value={Math.min(1080, Math.max(540, activeMinutes))} onChange={(event) => actions.setShadowTime(active.id, withDateAndTime(active.analysisTime, activeDate, timeFromMinutes(Number(event.target.value))))} /><span>18:00</span></div>
+            {activeSunStudy && <div className="sun-viz-block">
+              <SunExposureTimeline
+                label={workspaceMode === "compare" ? `${active.id} · ${scenarioName(active.id, active.name)}` : "시간대별 일조"}
+                samples={activeSunStudy.samples}
+                cityBlockedTimes={sceneBlockedTimes}
+                activeLocalDateTime={active.analysisTime}
+                onSelect={(localDateTime) => actions.setShadowTime(active.id, localDateTime)}
+              />
+              {workspaceMode === "compare" && compare && compareSunStudy && <SunExposureTimeline
+                label={`${compare.id} · ${scenarioName(compare.id, compare.name)}`}
+                samples={compareSunStudy.samples}
+                cityBlockedTimes={sceneBlockedTimes}
+                activeLocalDateTime={active.analysisTime}
+              />}
+              <SunExposureLegend />
+            </div>}
             {workspaceMode === "compare" && <div className="compare-drawer">
               <div className="compare-drawer-head"><div><div className="eyebrow">대안 비교</div><strong>주요 차이</strong></div><select aria-label="비교할 대안" value={state.compareScenarioId ?? ""} onChange={(event) => actions.compareScenarios(active.id, event.target.value || undefined)}><option value="">비교 안 함</option>{state.scenarios.filter((scenario) => scenario.id !== active.id).map((scenario) => <option key={scenario.id} value={scenario.id}>{scenario.id} · {scenario.name}</option>)}</select></div>
-              {compare && compareShadow ? <div className="compare-grid"><Meter label="높이 A / B" value={`${active.mass.heightM} / ${compare.mass.heightM}`} suffix="m" /><Meter label="연면적 차이" value={(estimateGfa(active.mass) - estimateGfa(compare.mass)).toLocaleString()} suffix="㎡" /><Meter label="그림자 차이" value={(activeShadow.lengthM - compareShadow.lengthM).toFixed(1)} suffix="m" /><Meter label="일조 A / B" value={activeSunStudy && compareSunStudy ? `${formatMinutesKo(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes)} / ${formatMinutesKo(sceneSunContext?.supported ? compareContextSunMinutes : compareSunStudy.sunMinutes)}` : "—"} /></div> : <p className="muted">비교할 다른 대안을 선택하세요.</p>}
+              {compare && compareShadow ? <div className="compare-grid"><Meter label="높이 A / B" value={`${active.mass.heightM} / ${compare.mass.heightM}`} suffix="m" /><Meter label="연면적 차이" value={(estimateGfa(active.mass) - estimateGfa(compare.mass)).toLocaleString()} suffix="㎡" /><Meter label="그림자 차이" value={(activeShadow.lengthM - compareShadow.lengthM).toFixed(1)} suffix="m" /><Meter label="일조 A / B" value={activeSunStudy && compareSunStudy ? `${formatMinutesKo(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes)} / ${formatMinutesKo(sceneSunContext?.supported ? compareContextSunMinutes : compareSunStudy.sunMinutes)}` : "—"} /><Meter label="가시율 A / B" value={viewImpactResults[active.id] && viewImpactResults[compare.id] ? `${viewImpactResults[active.id].visibleRatioPct.toFixed(0)} / ${viewImpactResults[compare.id].visibleRatioPct.toFixed(0)}` : "—"} suffix={viewImpactResults[active.id] && viewImpactResults[compare.id] ? "%" : ""} /></div> : <p className="muted">비교할 다른 대안을 선택하세요.</p>}
             </div>}
           </> : <div className="analysis-empty"><strong>먼저 부지를 선택해보세요.</strong><span>주소 검색 → 필지 선택 → 건물 배치 → 일조·조망 비교</span></div>}
         </section>
@@ -560,7 +606,19 @@ export default function App() {
           <section className="inspector-section"><div className="section-heading"><span>그림자</span><b>{activeTime}</b></div><div className="readout-list"><div><span>태양고도</span><strong>{solarValue(activeShadow.solar.elevationDeg)}</strong></div><div><span>방위각</span><strong>{solarValue(activeShadow.solar.azimuthDeg)}</strong></div><div><span>그림자 길이</span><strong>{activeShadow.solar.isDaylight ? `${activeShadow.lengthM.toFixed(1)}m` : "—"}</strong></div><div><span>그림자 방향</span><strong>{shadowBearing(activeShadow)}{activeShadow.solar.isDaylight ? "°" : ""}</strong></div></div></section>
           <section className="inspector-section"><div className="section-heading"><span>계획 수치</span><b>현재 대안</b></div><div className="readout-list"><div><span>대지면적</span><strong>{activePlanning ? Math.round(activePlanning.siteAreaM2).toLocaleString() : "—"}㎡</strong></div><div><span>건축면적</span><strong>{Math.round(footprintAreaM2(active.mass.footprint)).toLocaleString()}㎡</strong></div><div><span>추정 연면적</span><strong>{estimateGfa(active.mass).toLocaleString()}㎡</strong></div><div><span>계획 건폐율</span><strong>{activePlanning ? activePlanning.coverageRatioPct.toFixed(1) : "—"}%</strong></div><div><span>계획 용적률</span><strong>{activePlanning ? activePlanning.floorAreaRatioPct.toFixed(1) : "—"}%</strong></div></div></section>
           <section className="inspector-section"><div className="section-heading"><span>일조시간</span><b>09:00–18:00</b></div><div className="readout-list"><div><span>분석 지점</span><strong>{state.sunStudyPoint ? "사용자 지정" : "부지 중심"}</strong></div><div><span>직접 일조</span><strong>{activeSunStudy ? formatMinutesKo(sceneSunContext?.supported ? activeContextSunMinutes : activeSunStudy.sunMinutes) : "—"}</strong></div><div><span>계획 건물 음영</span><strong>{activeSunStudy ? formatMinutesKo(activeSunStudy.shadowMinutes) : "—"}</strong></div><div><span>주변 환경</span><strong>{sceneSunBusy ? "계산 중…" : sceneSunContext?.supported ? "VWorld 3D 반영" : "계획 건물만"}</strong></div></div><button className="quiet-button analysis-action" onClick={() => setCanvasMode("sun-point")}>일조 지점 선택</button>{state.sunStudyPoint && <button className="quiet-button analysis-action" onClick={() => actions.setSunStudyPoint(undefined, "human")}>부지 중심 사용</button>}</section>
-          <section className="inspector-section"><div className="section-heading"><span>조망 위치</span><b>{state.viewpoint ? `눈높이 ${state.viewpoint.eyeHeightM.toFixed(1)}m` : "미설정"}</b></div>{state.viewpoint ? <><label className="control"><div className="control-line"><span>눈높이</span><span className="value-editor"><input aria-label="조망 눈높이" type="number" min={1.2} max={50} step={0.1} value={state.viewpoint.eyeHeightM} onChange={(event) => actions.setViewpoint({ ...state.viewpoint!, eyeHeightM: Number(event.target.value) }, "human")} /><em>m</em></span></div></label><div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>이 위치에서 보기</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>해제</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>조망 위치 선택</button>}</section>
+          <section className="inspector-section"><div className="section-heading"><span>조망 위치</span><b>{state.viewpoint ? `눈높이 ${state.viewpoint.eyeHeightM.toFixed(1)}m` : "미설정"}</b></div>{state.viewpoint ? <><label className="control"><div className="control-line"><span>눈높이</span><span className="value-editor"><input aria-label="조망 눈높이" type="number" min={1.2} max={50} step={0.1} value={state.viewpoint.eyeHeightM} onChange={(event) => actions.setViewpoint({ ...state.viewpoint!, eyeHeightM: Number(event.target.value) }, "human")} /><em>m</em></span></div></label>{viewImpactResults[active.id] && <>
+            <ViewImpactBar
+              visibleRatioPct={viewImpactResults[active.id].visibleRatioPct}
+              classification={viewImpactResults[active.id].classification}
+              label={`${active.id}안 예상 가시율`}
+            />
+            <div className="readout-list"><div><span>가시 샘플</span><strong>{viewImpactResults[active.id].visibleSamples} / {viewImpactResults[active.id].totalSamples}</strong></div></div>
+            {compare && viewImpactResults[compare.id] && <ViewImpactBar
+              visibleRatioPct={viewImpactResults[compare.id].visibleRatioPct}
+              classification={viewImpactResults[compare.id].classification}
+              label={`${compare.id}안 예상 가시율`}
+            />}
+          </>}<div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>이 위치에서 보기</button><button className="quiet-button" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "분석 중…" : "조망 분석"}</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>해제</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>조망 위치 선택</button>}</section>
           <small className="boundary">*일조·그림자 결과는 초기 공간 검토용입니다. 법적 일조권 판정이나 인허가 판단을 대신하지 않습니다.</small>
         </> : <div className="inspector-empty"><div className="eyebrow">설계 설정</div><h2>선택된 건물이 없습니다</h2><p>사각형 또는 자유형 도구로 첫 건물을 만들어보세요.</p></div>}
       </aside>
