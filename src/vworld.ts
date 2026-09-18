@@ -25,7 +25,10 @@ function loadExternalScript(src: string) {
     script.src = src;
     script.async = false;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load VWorld dependency: ${new URL(src).pathname}`));
+    script.onerror = () => {
+      const url = new URL(src, window.location.href);
+      reject(new Error(`VWorld dependency load failed: ${url.origin}${url.pathname}`));
+    };
     document.head.appendChild(script);
   });
 }
@@ -54,15 +57,15 @@ export function loadVWorld(apiKey: string) {
       template.innerHTML = markup;
       template.content.querySelectorAll("script[src]").forEach((child) => {
         const src = child.getAttribute("src");
-        if (src) childScripts.push(new URL(src, document.baseURI).href);
+        if (src) childScripts.push(new URL(src, "https://map.vworld.kr/").href);
       });
     };
     document.write = captureMarkup;
     document.writeln = captureMarkup;
     const script = document.createElement("script");
+    // Match the official VWorld WebGL 3.0 examples: the SDK bootstrap URL
+    // uses version + apiKey only. Domain handling remains on VWorld REST APIs.
     const params = new URLSearchParams({ version: "3.0", apiKey });
-    const domain = import.meta.env.VITE_VWORLD_DOMAIN as string | undefined;
-    if (domain) params.set("domain", domain);
     script.src = `https://map.vworld.kr/js/webglMapInit.js.do?${params.toString()}`;
     script.async = false;
     script.onload = () => {
@@ -80,7 +83,7 @@ export function loadVWorld(apiKey: string) {
     script.onerror = () => {
       document.write = originalWrite;
       document.writeln = originalWriteln;
-      reject(new Error("Failed to load VWorld WebGL SDK"));
+      reject(new Error("VWorld WebGL SDK bootstrap failed at map.vworld.kr"));
     };
     document.head.appendChild(script);
   }).catch((error) => {
