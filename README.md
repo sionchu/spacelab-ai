@@ -19,6 +19,8 @@ SpaceLab is a small browser-native V0 for non-specialists. It places conceptual 
 - Planned site coverage/FAR metrics from parcel area and current mass
 - VWorld WebGL adapter with a no-key fallback geometry canvas
 - WebMCP tools that call the same application action surface as the UI
+- Concept View brief/export from the current scenario, VWorld camera, and optional viewport snapshot
+- Optional server-side image-generation endpoint; provider credentials never live in the browser
 
 This is early-stage massing exploration. It is not a legal sunlight-right determination, building-permit advice, full CAD/BIM system, structural analysis, or a replacement for licensed professional review.
 
@@ -70,7 +72,7 @@ WebMCP is optional. The site remains usable without a Site Tools-capable host.
 
 ## Sites deployment
 
-See [`SITES_DEPLOY.md`](./SITES_DEPLOY.md). Configure `VITE_VWORLD_API_KEY` as a hosted build environment variable, deploy the Vite app, then allowlist the final public Site origin in the VWorld console.
+See [`SITES_DEPLOY.md`](./SITES_DEPLOY.md). Configure `VITE_VWORLD_API_KEY` as a hosted build environment variable, deploy the Vite app, then allowlist the final public Site origin in the VWorld console. Concept View image generation is optional and uses `VITE_CONCEPT_VIEW_ENDPOINT` only as a public server endpoint URL; image-provider secrets must stay on that server.
 
 ## License
 
