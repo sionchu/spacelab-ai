@@ -21,6 +21,7 @@ import type { BuildingMass, Footprint, GeoPoint, LocalPoint } from "./types";
 import { registerSpaceLabTools } from "./webmcp";
 import {
   clearScenarioEntities,
+  controlCamera,
   flyToSite,
   flyToViewpoint,
   frameSite,
@@ -456,6 +457,16 @@ export default function App() {
     frameWorkspace(state.site, scenarios, state.viewpoint);
   }
 
+  function nudgeActiveMass(eastDeltaM: number, northDeltaM: number) {
+    if (!active) return;
+    actions.editBuildingMass(active.id, {
+      position: {
+        eastM: active.mass.position.eastM + eastDeltaM,
+        northM: active.mass.position.northM + northDeltaM,
+      },
+    }, "human");
+  }
+
   function finishPolygon() {
     if (draftPoints.length < 3) return;
     actions.createBuildingMass({
@@ -586,7 +597,11 @@ export default function App() {
           </div>}
         </div>}
 
-        <div className="map-utility-toolbar" aria-label="지도 화면 맞춤">
+        <div className="map-utility-toolbar" aria-label="지도 조작">
+          <button onClick={() => controlCamera("rotate-left")} disabled={!vworldReady}>좌회전</button>
+          <button onClick={() => controlCamera("rotate-right")} disabled={!vworldReady}>우회전</button>
+          <button onClick={() => controlCamera("zoom-out")} disabled={!vworldReady}>축소</button>
+          <button onClick={() => controlCamera("zoom-in")} disabled={!vworldReady}>확대</button>
           <button onClick={() => frameSite(state.site)} disabled={!vworldReady}>선택 부지</button>
           <button onClick={frameCurrentWorkspace} disabled={!vworldReady}>전체 보기</button>
         </div>
@@ -653,6 +668,20 @@ export default function App() {
             <button disabled={!vworldReady} onClick={() => { frameSite(state.site); setMobileToolPanel(null); }}>선택 부지로 복귀</button>
             <button disabled={!vworldReady} onClick={() => { frameCurrentWorkspace(); setMobileToolPanel(null); }}>전체 보기</button>
           </div>
+          <div className="mobile-map-control-panel">
+            <div className="mobile-map-control-head"><span>지도 조작</span><small>회전 · 이동 · 확대</small></div>
+            <div className="mobile-map-control-grid">
+              <button disabled={!vworldReady} onClick={() => controlCamera("rotate-left")}>좌회전</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("pan-up")}>위로</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("rotate-right")}>우회전</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("pan-left")}>왼쪽</button>
+              <button disabled={!vworldReady} onClick={() => frameSite(state.site)}>부지</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("pan-right")}>오른쪽</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("zoom-out")}>축소</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("pan-down")}>아래로</button>
+              <button disabled={!vworldReady} onClick={() => controlCamera("zoom-in")}>확대</button>
+            </div>
+          </div>
         </div>}
 
         {mobileToolPanel === "building" && <div className="mobile-tool-content">
@@ -670,11 +699,30 @@ export default function App() {
             <button onClick={() => { createRectangle(); setMobileToolPanel(null); }}><strong>사각형</strong><span>기본 매스를 만든 뒤 폭·깊이·높이를 직접 조절</span></button>
             <button onClick={() => { startPolygon(); setMobileToolPanel(null); }}><strong>자유형</strong><span>지도에서 원하는 건물 외곽점을 직접 지정</span></button>
           </div>}
-          {active && <div className="mobile-edit-row">
-            <button onClick={() => { setCanvasMode("move-mass"); setMobileToolPanel(null); }}>위치 이동</button>
-            <button onClick={() => { setInspectorOpen(true); setMobileToolPanel(null); }}>상세 설정</button>
-            <button className="danger" onClick={() => { actions.deleteScenario(active.id, "human"); setMobileToolPanel(null); }}>삭제</button>
-          </div>}
+          {active && <>
+            <div className="mobile-edit-row">
+              <button onClick={() => { setCanvasMode("move-mass"); setMobileToolPanel(null); }}>지도에서 이동</button>
+              <button onClick={() => { setInspectorOpen(true); setMobileToolPanel(null); }}>상세 설정</button>
+              <button className="danger" onClick={() => { actions.deleteScenario(active.id, "human"); setMobileToolPanel(null); }}>삭제</button>
+            </div>
+            <div className="mass-nudge-panel">
+              <div className="mass-nudge-head"><span>배치 미세조정</span><small>1m 단위</small></div>
+              <div className="mass-nudge-grid">
+                <span></span>
+                <button onClick={() => nudgeActiveMass(0, 1)}>북 +1m</button>
+                <span></span>
+                <button onClick={() => nudgeActiveMass(-1, 0)}>서 −1m</button>
+                <div className="mass-offset-readout">
+                  <strong>{active.mass.position.eastM.toFixed(0)}, {active.mass.position.northM.toFixed(0)}</strong>
+                  <small>동 / 북 m</small>
+                </div>
+                <button onClick={() => nudgeActiveMass(1, 0)}>동 +1m</button>
+                <span></span>
+                <button onClick={() => nudgeActiveMass(0, -1)}>남 −1m</button>
+                <span></span>
+              </div>
+            </div>
+          </>}
         </div>}
 
         {mobileToolPanel === "analysis" && <div className="mobile-tool-content">
