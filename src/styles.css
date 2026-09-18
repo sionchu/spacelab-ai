@@ -134,7 +134,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .compare-drawer { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border); }
 .compare-drawer-head strong { display: block; margin-top: 3px; font-size: 13px; font-weight: 650; }
 .compare-drawer .muted { margin: 10px 0 0; }
-.compare-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 9px; }
+.compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin-top: 9px; }
 .metric { min-width: 0; padding-left: 10px; border-left: 1px solid var(--color-border); }
 .metric:first-child { padding-left: 0; border-left: 0; }
 .metric span, .metric strong { display: block; }
@@ -339,8 +339,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 /* Analysis Pack v1 */
 .analysis-action { margin-top: 8px; margin-right: 6px; }
-.viewpoint-actions { display: flex; gap: 6px; margin-top: 8px; }
+.viewpoint-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .viewpoint-actions .quiet-button { flex: 1; }
 
 .canvas-mode-sun-point .vworld-canvas,
 .canvas-mode-viewpoint .vworld-canvas { cursor: crosshair; }
+
+.viewpoint-actions .quiet-button:disabled { opacity: .5; cursor: default; }
