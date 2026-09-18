@@ -167,15 +167,65 @@ function localPointsToDegrees(center: GeoPoint, points: LocalPoint[]) {
   return points.map((point) => localPointToGeo(center, point)).flatMap((point) => [point.lon, point.lat]);
 }
 
-export function flyToSite(site: Site, height = 230) {
+function flyToGeo(point: GeoPoint, height: number) {
   const viewer = window.viewer;
   const Cesium = window.Cesium;
   if (!viewer?.camera || !Cesium) return;
   viewer.camera.flyTo({
-    destination: Cesium.Cartesian3.fromDegrees(site.center.lon, site.center.lat, height),
+    destination: Cesium.Cartesian3.fromDegrees(point.lon, point.lat, height),
     orientation: { heading: 0, pitch: Cesium.Math.toRadians(-72), roll: 0 },
     duration: 0.8,
   });
+}
+
+export function flyToSite(site: Site, height = 230) {
+  flyToGeo(site.center, height);
+}
+
+function frameGeoPoints(site: Site, points: GeoPoint[], minHeightM: number, scale = 3) {
+  if (!points.length) {
+    flyToSite(site);
+    return;
+  }
+
+  const local = points.map((point) => geoPointToLocal(site.center, point));
+  const xs = local.map((point) => point.xM);
+  const ys = local.map((point) => point.yM);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const widthM = Math.max(1, maxX - minX);
+  const depthM = Math.max(1, maxY - minY);
+  const spanM = Math.max(widthM, depthM, 36);
+  const center = localPointToGeo(site.center, {
+    xM: (minX + maxX) / 2,
+    yM: (minY + maxY) / 2,
+  });
+  const height = Math.min(1_800, Math.max(minHeightM, spanM * scale));
+  flyToGeo(center, height);
+}
+
+export function frameSite(site: Site) {
+  frameGeoPoints(site, site.boundary.length ? site.boundary : [site.center], 110, 3.2);
+}
+
+export function frameWorkspace(
+  site: Site,
+  scenarios: Scenario[],
+  viewpoint?: Viewpoint,
+) {
+  const points: GeoPoint[] = [...site.boundary];
+  scenarios.forEach((scenario) => {
+    rotatedFootprintPoints(scenario.mass).forEach((point) => {
+      points.push(localPointToGeo(site.center, {
+        xM: point.xM + scenario.mass.position.eastM,
+        yM: point.yM + scenario.mass.position.northM,
+      }));
+    });
+  });
+  if (viewpoint) points.push(viewpoint.point);
+  frameGeoPoints(site, points.length ? points : [site.center], 140, 3.1);
 }
 
 export function renderSite(site: Site) {
