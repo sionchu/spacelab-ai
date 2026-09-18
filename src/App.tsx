@@ -656,6 +656,11 @@ export default function App() {
         <div className="mobile-tool-sheet-handle" aria-hidden="true"></div>
         {mobileToolPanel === "site" && <div className="mobile-tool-content">
           <div className="mobile-tool-head"><div><span>부지</span><strong>검토할 위치를 정하세요</strong></div><button onClick={() => setMobileToolPanel(null)} aria-label="닫기">×</button></div>
+          <div className={`selected-site-card ${state.site.source === "vworld-cadastral" ? "selected" : ""}`}>
+            <span>{state.site.source === "vworld-cadastral" ? "선택 필지" : "현재 위치"}</span>
+            <strong>{state.site.address || siteName(state.site.source, state.site.name)}</strong>
+            <small>{state.site.pnu ? `PNU ${state.site.pnu}` : state.site.source === "vworld-cadastral" ? "지적 필지 선택됨" : "실제 필지를 선택해주세요"}</small>
+          </div>
           <form className="mobile-site-search" onSubmit={handleSearch}>
             <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={apiKey ? "주소나 지번 검색" : "VWorld 연결 필요"} aria-label="주소 검색" />
             <button type="submit" disabled={searching || !apiKey}>{searching ? "…" : "검색"}</button>
