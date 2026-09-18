@@ -15,7 +15,7 @@ SpaceLab is a small browser-native V0 for non-specialists. It places conceptual 
 - A/B comparison with GFA, height, solar-geometry shadow deltas, and direct-sun duration
 - Geolocation/date/time solar position and ground shadow polygon preview
 - Selectable ground-point Direct Sun Hours pre-check with planned-mass shadow plus VWorld 3D scene/terrain occlusion when supported
-- Repeatable VWorld viewpoint for scenario viewing
+- Repeatable VWorld viewpoint for scenario viewing and sampled View Impact estimation
 - Planned site coverage/FAR metrics from parcel area and current mass
 - VWorld WebGL adapter with a no-key fallback geometry canvas
 - WebMCP tools that call the same application action surface as the UI
@@ -63,6 +63,7 @@ For a local project `.env`, copy `.env.example` to `.env` and set `VITE_VWORLD_A
 - `set_sun_study_point`
 - `set_viewpoint`
 - `run_direct_sun_study`
+- `run_view_impact`
 - `compare_scenarios`
 
 WebMCP is optional. The site remains usable without a Site Tools-capable host.
