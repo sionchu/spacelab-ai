@@ -293,7 +293,7 @@ export default function App() {
 
   useEffect(() => {
     if (!vworldReady) return;
-    flyToSite(state.site);
+    frameSite(state.site);
   }, [state.site.id, vworldReady]);
 
   useEffect(() => {
