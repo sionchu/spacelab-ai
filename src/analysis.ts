@@ -1,4 +1,11 @@
-import { computeShadowPolygon, estimateGfa, footprintAreaM2, geoPointToLocal } from "./model";
+import {
+  computeShadowPolygon,
+  estimateGfa,
+  footprintAreaM2,
+  geoPointToLocal,
+  localPointToGeo,
+  rotatedFootprintPoints,
+} from "./model";
 import type { BuildingMass, GeoPoint, LocalPoint, Site } from "./types";
 
 export type SunStudySample = {
@@ -17,6 +24,12 @@ export type DirectSunStudy = {
   daylightMinutes: number;
   samples: SunStudySample[];
   scope: "planned-mass-only";
+};
+
+export type ViewTargetSample = {
+  id: string;
+  point: GeoPoint;
+  heightFraction: number;
 };
 
 export type PlanningMetrics = {
@@ -126,6 +139,37 @@ export function directSunStudy(
     samples,
     scope: "planned-mass-only",
   };
+}
+
+
+
+export function viewTargetSamples(
+  site: Site,
+  mass: BuildingMass,
+  heightFractions: number[] = [0.25, 0.5, 0.75, 1],
+): ViewTargetSample[] {
+  const localFootprint = rotatedFootprintPoints(mass).map((point) => ({
+    xM: point.xM + mass.position.eastM,
+    yM: point.yM + mass.position.northM,
+  }));
+  const maxVertices = 8;
+  const vertexStep = Math.max(1, Math.ceil(localFootprint.length / maxVertices));
+  const selectedVertices = localFootprint.filter((_, index) => index % vertexStep === 0).slice(0, maxVertices);
+  const centerLocal = {
+    xM: mass.position.eastM,
+    yM: mass.position.northM,
+  };
+
+  const horizontalSamples = [
+    { id: "center", point: centerLocal },
+    ...selectedVertices.map((point, index) => ({ id: `v${index + 1}`, point })),
+  ];
+
+  return horizontalSamples.flatMap((sample) => heightFractions.map((heightFraction) => ({
+    id: `${sample.id}-h${Math.round(heightFraction * 100)}`,
+    point: localPointToGeo(site.center, sample.point),
+    heightFraction,
+  })));
 }
 
 export function formatMinutes(minutes: number) {
