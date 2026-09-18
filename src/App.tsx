@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { createApplicationActions } from "./actions";
+import { ConceptViewPanel } from "./concept-view-panel";
 import { directSunStudy, formatMinutes, planningMetrics } from "./analysis";
 import { SunExposureLegend, SunExposureTimeline, ViewImpactBar } from "./analysis-visuals";
 import {
@@ -36,6 +37,7 @@ import "./styles.css";
 
 const apiKey = import.meta.env.VITE_VWORLD_API_KEY as string | undefined;
 const vworldDomain = import.meta.env.VITE_VWORLD_DOMAIN as string | undefined;
+const conceptViewEndpoint = import.meta.env.VITE_CONCEPT_VIEW_ENDPOINT as string | undefined;
 
 type CanvasMode = "inspect" | "pick-site" | "draw-polygon" | "move-mass" | "sun-point" | "viewpoint";
 
@@ -554,6 +556,7 @@ export default function App() {
     label={`${compare.id} visibility`}
   />}
 </>}<div className="viewpoint-actions"><button className="quiet-button" onClick={() => flyToViewpoint(state.viewpoint!, state.site, active.mass)}>Open view</button><button className="quiet-button" disabled={viewImpactBusy} onClick={() => void runViewImpact()}>{viewImpactBusy ? "Analyzing…" : "Analyze view"}</button><button className="quiet-button" onClick={() => { actions.setViewpoint(undefined, "human"); flyToSite(state.site); }}>Clear</button></div></> : <button className="quiet-button analysis-action" onClick={() => setCanvasMode("viewpoint")}>Pick viewpoint</button>}</section>
+          <ConceptViewPanel site={state.site} scenario={active} viewpoint={state.viewpoint} endpoint={conceptViewEndpoint} />
           <small className="boundary">*Direct sun uses the current planned mass plus VWorld 3D scene height sampling when supported. It remains a geometric pre-check, not a statutory sunlight-right determination.</small>
         </> : <div className="inspector-empty"><div className="eyebrow">INSPECTOR</div><h2>No mass selected</h2><p>Use Rectangle or Polygon on the map to create the first design option.</p></div>}
       </aside>

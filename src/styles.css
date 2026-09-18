@@ -454,3 +454,93 @@ button.sun-segment { cursor: pointer; }
   text-transform: uppercase;
   letter-spacing: .06em;
 }
+
+
+/* Concept View v1 */
+.concept-view-section { padding-bottom: 10px; }
+.concept-note {
+  margin: 8px 0 0;
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  line-height: 1.5;
+}
+.concept-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 10px;
+}
+.concept-fields label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.concept-fields span {
+  color: var(--color-text-secondary);
+  font-size: 9px;
+}
+.concept-fields select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  padding: 7px;
+  background: var(--color-app-chrome);
+  color: var(--color-text-primary);
+  font-size: 10px;
+}
+.concept-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.concept-actions .quiet-button { flex: 1 1 120px; }
+.concept-actions.secondary .quiet-button { flex-basis: 100px; }
+.concept-actions .quiet-button:disabled { opacity: .4; cursor: default; }
+.concept-preview {
+  margin-top: 10px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-app-chrome);
+}
+.concept-preview img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  object-fit: cover;
+  background: #090b0e;
+}
+.concept-preview span {
+  display: block;
+  padding: 6px 7px;
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+}
+.concept-preview.generated {
+  border-color: rgba(130, 155, 255, .45);
+}
+.concept-brief {
+  margin-top: 9px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+}
+.concept-brief summary {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+}
+.concept-brief p {
+  margin: 7px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: 9px;
+  line-height: 1.55;
+}
+.concept-message {
+  display: block;
+  margin-top: 8px;
+  color: var(--color-status-attention);
+  font-size: 9px;
+  line-height: 1.45;
+}

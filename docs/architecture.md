@@ -70,3 +70,16 @@ This is a geometric comparison aid. The visibility percentage is a sampled estim
 - View Impact uses a simple 0–100% visibility bar backed by the existing sampled runtime result.
 
 This layer does not recalculate or reinterpret analysis results and introduces no charting dependency.
+
+
+## Concept View v1
+
+Concept View is deliberately separated from deterministic spatial analysis.
+
+- `src/concept-view.ts` builds a provider-neutral request from canonical `Site`, one `Scenario`, the saved `viewpoint`, and the current VWorld camera.
+- `captureVWorldSnapshot` is a best-effort rendering-adapter helper. A runtime may refuse or return no canvas image; Concept View still exports the structured brief in that case.
+- `src/concept-view-provider.ts` contains only the browser-to-server contract. It never receives a provider API key.
+- `VITE_CONCEPT_VIEW_ENDPOINT` is an optional public endpoint URL. The endpoint, if configured, owns provider authentication and returns a generated image URL or base64 payload.
+- Generated imagery is presentation material. It does not mutate `Site`, `BuildingMass`, `Scenario`, solar results, or View Impact results.
+
+A future server implementation can use an image-edit/generation model with the captured VWorld view as reference while preserving the mass envelope and camera composition.
