@@ -4,7 +4,7 @@ import { getScenario } from "./model";
 import type {
   AddressSearchResult,
 } from "./vworld-api";
-import type { ApplicationActions, GeoPoint, Site, SpatialWorkspace } from "./types";
+import type { ApplicationActions, BuildingMass, GeoPoint, Site, SpatialWorkspace, Viewpoint } from "./types";
 
 declare global {
   interface Document {
@@ -19,6 +19,15 @@ type ToolBridge = ApplicationActions & {
   searchLocation: (query: string) => Promise<AddressSearchResult[]>;
   selectSiteAtPoint: (point: GeoPoint, label?: string) => Promise<Site>;
   sampleSunContext: (point: GeoPoint, samples: SunStudySample[]) => Promise<{ supported: boolean; blockedTimes: string[]; source: string }>;
+  sampleViewImpact: (viewpoint: Viewpoint, site: Site, mass: BuildingMass) => Promise<{
+    supported: boolean;
+    visibleSamples: number;
+    totalSamples: number;
+    visibleRatioPct: number;
+    classification: string;
+    blockedSampleIds: string[];
+    source: string;
+  }>;
 };
 
 const pointSchema = {
@@ -296,6 +305,34 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
         cityContextSource: context.source,
         cityContextBlockedTimes: context.blockedTimes,
         samples: study.samples,
+      };
+    },
+  });
+
+
+  register({
+    name: "run_view_impact",
+    title: "Run SpaceLab viewpoint visibility analysis",
+    description: "Estimate how much of one planned mass is visible from the saved viewpoint against the loaded VWorld 3D city and terrain. This is a geometric view-impact aid, not a legal view-right determination.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scenarioId: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+    execute: async (input: { scenarioId?: string }) => {
+      const state = bridge.getState();
+      if (!state.viewpoint) throw new Error("No SpaceLab viewpoint is set.");
+      const scenarioId = input.scenarioId ?? state.activeScenarioId;
+      if (!scenarioId) throw new Error("No active SpaceLab scenario.");
+      const scenario = getScenario(state, scenarioId);
+      const result = await bridge.sampleViewImpact(state.viewpoint, state.site, scenario.mass);
+      return {
+        scenarioId,
+        viewpoint: state.viewpoint,
+        ...result,
       };
     },
   });
