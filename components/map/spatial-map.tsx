@@ -36,13 +36,13 @@ const baseStyle: StyleSpecification = {
   },
   layers: [
     { id: "background", type: "background", paint: { "background-color": "#0d141b" } },
-    { id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.35, "raster-brightness-max": 0.76 } },
+    { id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.55, "raster-brightness-max": 0.66, "raster-contrast": 0.08 } },
   ],
   light: {
     anchor: "map",
-    color: "#ffffff",
-    intensity: 0.55,
-    position: [1.5, 180, 55],
+    color: "#fff9e8",
+    intensity: 0.68,
+    position: [1.5, 180, 50],
   },
 };
 
@@ -53,13 +53,13 @@ function setGeoJson(map: MapLibreMap, id: string, data: GeoJSON.GeoJSON) {
 
 function fitSite(map: MapLibreMap, site: Site) {
   if (site.boundary.length < 3) {
-    map.easeTo({ center: [site.center.lon, site.center.lat], zoom: 16.5, pitch: 55, duration: 700 });
+    map.easeTo({ center: [site.center.lon, site.center.lat], zoom: 16.6, pitch: 64, bearing: -24, duration: 700 });
     return;
   }
   const extent = bbox(siteGeoJson(site));
   map.fitBounds(
     [[extent[0], extent[1]], [extent[2], extent[3]]],
-    { padding: 90, pitch: 55, bearing: -18, maxZoom: 18.2, duration: 700 },
+    { padding: 72, pitch: 64, bearing: -24, maxZoom: 17.2, duration: 700 },
   );
 }
 
@@ -167,9 +167,9 @@ export function SpatialMap({
       container: containerRef.current,
       style: baseStyle,
       center: [site.center.lon, site.center.lat],
-      zoom: 15.8,
-      pitch: 55,
-      bearing: -18,
+      zoom: 16.2,
+      pitch: 64,
+      bearing: -24,
       maxPitch: 75,
       attributionControl: false,
       canvasContextAttributes: {
@@ -190,13 +190,13 @@ export function SpatialMap({
         maxzoom: 15,
         encoding: "terrarium",
       });
-      map.setTerrain({ source: "terrain-dem", exaggeration: 1.15 });
+      map.setTerrain({ source: "terrain-dem", exaggeration: 1.25 });
       map.addLayer({
         id: "terrain-hillshade",
         type: "hillshade",
         source: "terrain-dem",
         paint: {
-          "hillshade-exaggeration": 0.18,
+          "hillshade-exaggeration": 0.24,
           "hillshade-shadow-color": "#071015",
           "hillshade-highlight-color": "#dfe7e9",
           "hillshade-accent-color": "#5b6b73",
@@ -238,12 +238,20 @@ export function SpatialMap({
         id: "context-buildings",
         type: "fill-extrusion",
         source: "context-buildings",
-        minzoom: 14,
+        minzoom: 13,
         paint: {
-          "fill-extrusion-color": "#88949d",
+          "fill-extrusion-color": [
+            "interpolate",
+            ["linear"],
+            ["coalesce", ["get", "heightM"], 9],
+            0, "#56616a",
+            15, "#6f7b84",
+            40, "#8e9aa3",
+            80, "#b0bac1",
+          ],
           "fill-extrusion-height": ["coalesce", ["get", "heightM"], 9],
           "fill-extrusion-base": 0,
-          "fill-extrusion-opacity": 0.50,
+          "fill-extrusion-opacity": 0.72,
           "fill-extrusion-vertical-gradient": true,
         },
       });
@@ -343,7 +351,7 @@ export function SpatialMap({
     map.setLight({
       anchor: "map",
       color: sun.isDaylight ? "#fff9e8" : "#71819a",
-      intensity: sun.isDaylight ? 0.62 : 0.22,
+      intensity: sun.isDaylight ? 0.72 : 0.28,
       position: [1.5, sun.azimuthDeg, polar],
     });
     if (map.getLayer("terrain-hillshade")) {
