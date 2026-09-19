@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0d1319;
+  --foreground: #f4f7f9;
+  --card: #131c24;
+  --card-foreground: #f4f7f9;
+  --muted: #1b2732;
+  --muted-foreground: #91a0ad;
+  --border: #2a3743;
+  --primary: #53d6c7;
+  --primary-foreground: #071c19;
+  --secondary: #7f9df4;
+  --destructive: #ef8795;
+  --radius: 0.85rem;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; min-height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", "Segoe UI", sans-serif;
+}
+
+button, input, select { font: inherit; }
+.maplibregl-map { font-family: inherit; }
+.maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.10);
+  border-radius: 12px;
+  background: rgba(15,22,29,.92);
+  box-shadow: 0 8px 22px rgba(0,0,0,.25);
+}
+.maplibregl-ctrl-group button { background-color: transparent; }
+.maplibregl-ctrl-group button + button { border-top-color: rgba(255,255,255,.08); }
+.maplibregl-ctrl-icon { filter: invert(1) opacity(.8); }
+.maplibregl-ctrl-attrib {
+  background: rgba(10,15,20,.72) !important;
+  color: #8d99a4;
+}
+.maplibregl-ctrl-attrib a { color: #aeb8c2; }
+
+@media (max-width: 768px) {
+  .maplibregl-ctrl-bottom-right { bottom: 76px; right: 8px; }
+}
