@@ -2,7 +2,7 @@ import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { PlayPlace } from "@/src/playsafe";
 
 const APP_USER_AGENT = "PlaySafe/0.1 (+https://github.com/sionchu/spacelab-ai)";
-const PLACE_ENDPOINTS = [
+const ENDPOINTS = [
   "https://overpass.private.coffee/api/interpreter",
   "https://overpass.osm.jp/api/interpreter",
   "https://overpass-api.de/api/interpreter",
@@ -31,40 +31,40 @@ function displayName(element: Element, kind: PlayPlace["kind"]) {
 }
 
 async function queryOverpass<T>(query: string, label: string): Promise<T> {
-  let lastError: Error | undefined;
-  for (const endpoint of PLACE_ENDPOINTS) {
-    try {
-      const url = new URL(endpoint);
-      url.searchParams.set("data", query);
-      const response = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": APP_USER_AGENT,
-          Referer: "https://github.com/sionchu/spacelab-ai",
-        },
-        signal: AbortSignal.timeout(12_000),
-        next: { revalidate: 3_600 },
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      return await response.json() as T;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-      console.warn(`[playsafe:${label}] endpoint failed`, new URL(endpoint).host, lastError.message);
-    }
+  const requests = ENDPOINTS.map(async (endpoint) => {
+    const url = new URL(endpoint);
+    url.searchParams.set("data", query);
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+        Referer: "https://github.com/sionchu/spacelab-ai",
+      },
+      signal: AbortSignal.timeout(4_500),
+      next: { revalidate: 3_600 },
+    });
+    if (!response.ok) throw new Error(new URL(endpoint).host + " HTTP " + response.status);
+    return await response.json() as T;
+  });
+
+  try {
+    return await Promise.any(requests);
+  } catch (error) {
+    console.warn("[playsafe:" + label + "] all endpoints failed", error instanceof Error ? error.message : String(error));
+    throw new Error("PlaySafe map data provider unavailable");
   }
-  throw lastError ?? new Error("No Overpass endpoint available");
 }
 
 export async function findNearbyPlayPlaces(
   lon: number,
   lat: number,
-  radiusM = 1_000,
-  limit = 6,
+  radiusM = 900,
+  limit = 4,
 ): Promise<PlayPlace[]> {
-  const query = `[out:json][timeout:12];(
+  const query = `[out:json][timeout:8];(
     nwr["leisure"="playground"](around:${radiusM},${lat},${lon});
     nwr["leisure"="park"](around:${radiusM},${lat},${lon});
-  );out center tags 40;`;
+  );out center tags 30;`;
 
   const payload = await queryOverpass<{ elements?: Element[] }>(query, "places");
 
@@ -87,7 +87,8 @@ export async function findNearbyPlayPlaces(
 
   items.sort((a, b) => {
     const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
-    return kindRank(a) - kindRank(b) || a.distanceM - b.distanceM;
+    const namedRank = (item: PlayPlace) => item.tags.name || item.tags["name:ko"] ? 0 : 1;
+    return kindRank(a) - kindRank(b) || namedRank(a) - namedRank(b) || a.distanceM - b.distanceM;
   });
 
   const deduped: PlayPlace[] = [];
@@ -128,16 +129,22 @@ function buildingHeightM(tags: Record<string, string>) {
 
 export async function buildingsAroundPlayPlaces(
   places: PlayPlace[],
-  radiusM = 260,
+  radiusM = 180,
 ): Promise<FeatureCollection<Polygon>> {
   if (!places.length) return { type: "FeatureCollection", features: [] };
 
   const clauses = places
-    .slice(0, 6)
+    .slice(0, 4)
     .map((place) => `way["building"](${bboxAround(place.point, radiusM)});`)
     .join("");
-  const query = `[out:json][timeout:12];(${clauses});out tags geom;`;
-  const payload = await queryOverpass<{ elements?: Element[] }>(query, "buildings");
+  const query = `[out:json][timeout:8];(${clauses});out tags geom;`;
+
+  let payload: { elements?: Element[] };
+  try {
+    payload = await queryOverpass<{ elements?: Element[] }>(query, "buildings");
+  } catch {
+    return { type: "FeatureCollection", features: [] };
+  }
 
   const features: Array<Feature<Polygon>> = [];
   const seen = new Set<number>();

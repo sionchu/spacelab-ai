@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const [places, weather] = await Promise.all([
-      findNearbyPlayPlaces(lon, lat, 1_000, 6),
+      findNearbyPlayPlaces(lon, lat, 900, 4),
       playSafeWeather(lon, lat, requestedAt),
     ]);
-    const buildings = await buildingsAroundPlayPlaces(places, 260);
+    const buildings = await buildingsAroundPlayPlaces(places, 180);
 
     const assessments = places
       .map((place) =>
