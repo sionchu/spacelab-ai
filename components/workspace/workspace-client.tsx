@@ -240,6 +240,20 @@ export function WorkspaceClient() {
             <div className="text-[10px] font-bold text-[var(--primary)]">SPACE WORKSPACE</div>
             <div className="mt-1 text-sm font-bold">{state.site.address || state.site.name}</div>
           </div>
+          <nav className="grid grid-cols-4 border-b border-white/7 bg-[#0f171e]/85 p-1" aria-label="워크스페이스 패널">
+            {navItems.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={panel === key}
+                onClick={() => setPanel(key)}
+                className={"grid place-items-center gap-1 rounded-lg px-1 py-2 text-[9px] font-semibold transition " + (panel === key ? "bg-[#1d2a34] text-white" : "text-[#798793] hover:bg-white/5 hover:text-white")}
+              >
+                <Icon className={"size-3.5 " + (panel === key ? "text-[var(--primary)]" : "")} />
+                {label}
+              </button>
+            ))}
+          </nav>
           <div className="p-3">
             <PanelContent
               panel={panel}
