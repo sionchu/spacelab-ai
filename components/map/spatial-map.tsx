@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import maplibregl, { type GeoJSONSource, type Map as MapLibreMap, type StyleSpecification } from "maplibre-gl";
+import * as maplibregl from "maplibre-gl";
+import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, StyleSpecification } from "maplibre-gl";
 import { bbox, featureCollection } from "@turf/turf";
 import type { Feature } from "geojson";
 import { computeShadowPolygon } from "@/src/model";
@@ -196,7 +197,7 @@ export function SpatialMap({
       fitSite(map, site);
     });
 
-    map.on("click", (event) => {
+    map.on("click", (event: MapMouseEvent) => {
       const point = { lon: event.lngLat.lng, lat: event.lngLat.lat };
       if (mode === "pick-site") onPickSite(point);
       if (mode === "move-mass") onMoveMass(point);
