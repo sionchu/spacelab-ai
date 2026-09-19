@@ -157,7 +157,7 @@ export function WorkspaceClient() {
             </div>
             <div className="text-right text-[10px] leading-4 text-[var(--muted-foreground)]">
               <div>고도 {sun.altitudeDeg.toFixed(1)}° · 방위 {sun.azimuthDeg.toFixed(1)}°</div>
-              <div>{shadow?.solar.isDaylight ? "그림자 " + shadow.lengthM.toFixed(1) + "m" : "야간"}</div>
+              <div>{!active ? "건물 없음" : shadow?.solar.isDaylight ? "그림자 " + shadow.lengthM.toFixed(1) + "m" : "태양 고도 0° 이하"}</div>
             </div>
           </div>
           <div className="mt-3 grid grid-cols-[42px_1fr_42px] items-center gap-2 text-[9px] text-[#8b98a3]">
