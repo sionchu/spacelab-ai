@@ -9,8 +9,14 @@ import { computeShadowPolygon } from "@/src/model";
 import type { GeoPoint, Scenario, Site, Viewpoint } from "@/src/types";
 import { scenarioFeature, shadowFeature, siteGeoJson } from "@/lib/spatial/geojson";
 import { solarPositionAt } from "@/lib/solar/sun";
+import type { ConceptCameraState } from "@/src/concept-view";
 
 type InteractionMode = "inspect" | "pick-site" | "move-mass" | "viewpoint";
+
+export type SpatialMapApi = {
+  getCameraState: () => ConceptCameraState | undefined;
+  captureSnapshot: () => Promise<Blob | undefined>;
+};
 
 const emptyContextBuildings: FeatureCollection<Polygon | MultiPolygon> = {
   type: "FeatureCollection",
@@ -57,6 +63,33 @@ function fitSite(map: MapLibreMap, site: Site) {
   );
 }
 
+function cameraState(map: MapLibreMap): ConceptCameraState {
+  const center = map.getCenter();
+  return {
+    center: { lon: center.lng, lat: center.lat },
+    zoom: map.getZoom(),
+    bearingDeg: map.getBearing(),
+    pitchDeg: map.getPitch(),
+  };
+}
+
+async function captureMapSnapshot(map: MapLibreMap): Promise<Blob | undefined> {
+  try {
+    map.triggerRepaint();
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const canvas = map.getCanvas();
+    return await new Promise<Blob | undefined>((resolve) => {
+      try {
+        canvas.toBlob((blob) => resolve(blob ?? undefined), "image/png");
+      } catch {
+        resolve(undefined);
+      }
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 export function SpatialMap({
   site,
   active,
@@ -70,6 +103,7 @@ export function SpatialMap({
   onPickSite,
   onMoveMass,
   onSetViewpoint,
+  onMapApi,
 }: {
   site: Site;
   active?: Scenario;
@@ -83,6 +117,7 @@ export function SpatialMap({
   onPickSite: (point: GeoPoint) => void;
   onMoveMass: (point: GeoPoint) => void;
   onSetViewpoint: (point: GeoPoint) => void;
+  onMapApi?: (api: SpatialMapApi | null) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -91,11 +126,13 @@ export function SpatialMap({
   const onPickSiteRef = useRef(onPickSite);
   const onMoveMassRef = useRef(onMoveMass);
   const onSetViewpointRef = useRef(onSetViewpoint);
+  const onMapApiRef = useRef(onMapApi);
 
   modeRef.current = mode;
   onPickSiteRef.current = onPickSite;
   onMoveMassRef.current = onMoveMass;
   onSetViewpointRef.current = onSetViewpoint;
+  onMapApiRef.current = onMapApi;
 
   const scene = useMemo(() => {
     const activeShadow = active
@@ -137,6 +174,10 @@ export function SpatialMap({
       bearing: -18,
       maxPitch: 75,
       attributionControl: false,
+      canvasContextAttributes: {
+        antialias: true,
+        preserveDrawingBuffer: true,
+      },
     });
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
@@ -251,6 +292,10 @@ export function SpatialMap({
 
       fitSite(map, site);
       setMapReady(true);
+      onMapApiRef.current?.({
+        getCameraState: () => cameraState(map),
+        captureSnapshot: () => captureMapSnapshot(map),
+      });
     });
 
     map.on("click", (event: MapMouseEvent) => {
@@ -262,6 +307,7 @@ export function SpatialMap({
 
     mapRef.current = map;
     return () => {
+      onMapApiRef.current?.(null);
       setMapReady(false);
       map.remove();
       mapRef.current = null;
