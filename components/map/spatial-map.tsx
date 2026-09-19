@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, StyleSpecification } from "maplibre-gl";
-import { bbox, featureCollection } from "@turf/turf";
+import { bbox, featureCollection, point } from "@turf/turf";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { computeShadowPolygon } from "@/src/model";
-import type { GeoPoint, Scenario, Site } from "@/src/types";
+import type { GeoPoint, Scenario, Site, Viewpoint } from "@/src/types";
 import { scenarioFeature, shadowFeature, siteGeoJson } from "@/lib/spatial/geojson";
 import { solarPositionAt } from "@/lib/solar/sun";
 
-type InteractionMode = "inspect" | "pick-site" | "move-mass";
+type InteractionMode = "inspect" | "pick-site" | "move-mass" | "viewpoint";
 
 const emptyContextBuildings: FeatureCollection<Polygon | MultiPolygon> = {
   type: "FeatureCollection",
@@ -64,8 +64,12 @@ export function SpatialMap({
   date,
   minutes,
   mode,
+  contextBuildings,
+  contextSource,
+  viewpoint,
   onPickSite,
   onMoveMass,
+  onSetViewpoint,
 }: {
   site: Site;
   active?: Scenario;
@@ -73,21 +77,25 @@ export function SpatialMap({
   date: string;
   minutes: number;
   mode: InteractionMode;
+  contextBuildings: FeatureCollection<Polygon | MultiPolygon>;
+  contextSource: string;
+  viewpoint?: Viewpoint;
   onPickSite: (point: GeoPoint) => void;
   onMoveMass: (point: GeoPoint) => void;
+  onSetViewpoint: (point: GeoPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [contextBuildings, setContextBuildings] = useState<FeatureCollection<Polygon | MultiPolygon>>(emptyContextBuildings);
-  const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
   const modeRef = useRef(mode);
   const onPickSiteRef = useRef(onPickSite);
   const onMoveMassRef = useRef(onMoveMass);
+  const onSetViewpointRef = useRef(onSetViewpoint);
 
   modeRef.current = mode;
   onPickSiteRef.current = onPickSite;
   onMoveMassRef.current = onMoveMass;
+  onSetViewpointRef.current = onSetViewpoint;
 
   const scene = useMemo(() => {
     const activeShadow = active
@@ -111,8 +119,11 @@ export function SpatialMap({
       site: siteGeoJson(site),
       buildings: featureCollection(buildingFeatures),
       shadows: featureCollection(shadowFeatures),
+      analysisPoints: viewpoint
+        ? featureCollection([point([viewpoint.point.lon, viewpoint.point.lat], { kind: "viewpoint" })])
+        : featureCollection([]),
     };
-  }, [active, compare, date, minutes, site]);
+  }, [active, compare, date, minutes, site, viewpoint]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -167,6 +178,20 @@ export function SpatialMap({
         source: "site",
         filter: ["==", ["get", "kind"], "site"],
         paint: { "line-color": "#66e1d4", "line-width": 3 },
+      });
+
+      map.addSource("analysis-points", { type: "geojson", data: scene.analysisPoints });
+      map.addLayer({
+        id: "viewpoint-marker",
+        type: "circle",
+        source: "analysis-points",
+        filter: ["==", ["get", "kind"], "viewpoint"],
+        paint: {
+          "circle-radius": 7,
+          "circle-color": "#7f9df4",
+          "circle-stroke-width": 3,
+          "circle-stroke-color": "#f4f7f9",
+        },
       });
 
       map.addSource("context-buildings", { type: "geojson", data: emptyContextBuildings });
@@ -232,6 +257,7 @@ export function SpatialMap({
       const point = { lon: event.lngLat.lng, lat: event.lngLat.lat };
       if (modeRef.current === "pick-site") onPickSiteRef.current(point);
       if (modeRef.current === "move-mass") onMoveMassRef.current(point);
+      if (modeRef.current === "viewpoint") onSetViewpointRef.current(point);
     });
 
     mapRef.current = map;
@@ -248,6 +274,7 @@ export function SpatialMap({
     setGeoJson(map, "site", scene.site);
     setGeoJson(map, "buildings", scene.buildings);
     setGeoJson(map, "shadows", scene.shadows);
+    setGeoJson(map, "analysis-points", scene.analysisPoints);
   }, [mapReady, scene]);
 
   useEffect(() => {
@@ -255,41 +282,6 @@ export function SpatialMap({
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     fitSite(map, site);
   }, [mapReady, site.id]);
-
-  useEffect(() => {
-    if (site.source === "demo") {
-      setContextBuildings(emptyContextBuildings);
-      setContextSource("건물 컨텍스트 없음");
-      return;
-    }
-    const controller = new AbortController();
-    const params = new URLSearchParams({
-      lon: String(site.center.lon),
-      lat: String(site.center.lat),
-      radius: "350",
-    });
-    void fetch(`/api/context/buildings?${params}`, { signal: controller.signal })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data?.type !== "FeatureCollection") return;
-        setContextBuildings(data as FeatureCollection<Polygon | MultiPolygon>);
-        const source = data.features?.[0]?.properties?.source;
-        setContextSource(
-          typeof source === "string" && source
-            ? source
-            : data.features?.length
-              ? "건물 GeoJSON"
-              : "건물 컨텍스트 없음",
-        );
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setContextBuildings(emptyContextBuildings);
-          setContextSource("건물 컨텍스트 없음");
-        }
-      });
-    return () => controller.abort();
-  }, [site.center.lat, site.center.lon, site.id, site.source]);
 
   useEffect(() => {
     const map = mapRef.current;
