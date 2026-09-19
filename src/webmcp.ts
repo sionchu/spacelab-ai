@@ -165,6 +165,11 @@ export function registerSpaceLabTools(bridge: SpaceLabWebMcpBridge) {
       properties: {
         name: { type: "string", maxLength: 120 },
         intent: { type: "string", maxLength: 300 },
+        analysisTime: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$",
+          description: "Optional local site analysis time. Values are normalized to the 09:00–18:00 preview range.",
+        },
         heightM: { type: "number", minimum: 3, maximum: 120 },
         floors: { type: "number", minimum: 1, maximum: 40 },
         rotationDeg: { type: "number", minimum: -180, maximum: 180 },
@@ -346,7 +351,7 @@ export function registerSpaceLabTools(bridge: SpaceLabWebMcpBridge) {
   register({
     name: "set_shadow_time",
     title: "Set a scenario analysis time",
-    description: "Set the local date and time used by a scenario's geometric solar shadow preview.",
+    description: "Set the canonical local date and time used by a scenario's solar preview. Values are normalized to the 09:00–18:00 preview range.",
     inputSchema: {
       type: "object",
       properties: {
