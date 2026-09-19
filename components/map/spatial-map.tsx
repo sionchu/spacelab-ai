@@ -1,16 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, StyleSpecification } from "maplibre-gl";
 import { bbox, featureCollection } from "@turf/turf";
-import type { Feature } from "geojson";
+import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import { computeShadowPolygon } from "@/src/model";
 import type { GeoPoint, Scenario, Site } from "@/src/types";
 import { scenarioFeature, shadowFeature, siteGeoJson } from "@/lib/spatial/geojson";
 import { solarPositionAt } from "@/lib/solar/sun";
 
 type InteractionMode = "inspect" | "pick-site" | "move-mass";
+
+const emptyContextBuildings: FeatureCollection<Polygon | MultiPolygon> = {
+  type: "FeatureCollection",
+  features: [],
+};
 
 const baseStyle: StyleSpecification = {
   version: 8,
@@ -73,6 +78,16 @@ export function SpatialMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [contextBuildings, setContextBuildings] = useState<FeatureCollection<Polygon | MultiPolygon>>(emptyContextBuildings);
+  const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
+  const modeRef = useRef(mode);
+  const onPickSiteRef = useRef(onPickSite);
+  const onMoveMassRef = useRef(onMoveMass);
+
+  modeRef.current = mode;
+  onPickSiteRef.current = onPickSite;
+  onMoveMassRef.current = onMoveMass;
 
   const scene = useMemo(() => {
     const activeShadow = active
@@ -154,6 +169,21 @@ export function SpatialMap({
         paint: { "line-color": "#66e1d4", "line-width": 3 },
       });
 
+      map.addSource("context-buildings", { type: "geojson", data: emptyContextBuildings });
+      map.addLayer({
+        id: "context-buildings",
+        type: "fill-extrusion",
+        source: "context-buildings",
+        minzoom: 14,
+        paint: {
+          "fill-extrusion-color": "#88949d",
+          "fill-extrusion-height": ["coalesce", ["get", "heightM"], 9],
+          "fill-extrusion-base": 0,
+          "fill-extrusion-opacity": 0.50,
+          "fill-extrusion-vertical-gradient": true,
+        },
+      });
+
       map.addSource("shadows", { type: "geojson", data: scene.shadows });
       map.addLayer({
         id: "shadow-fill",
@@ -195,16 +225,18 @@ export function SpatialMap({
       });
 
       fitSite(map, site);
+      setMapReady(true);
     });
 
     map.on("click", (event: MapMouseEvent) => {
       const point = { lon: event.lngLat.lng, lat: event.lngLat.lat };
-      if (mode === "pick-site") onPickSite(point);
-      if (mode === "move-mass") onMoveMass(point);
+      if (modeRef.current === "pick-site") onPickSiteRef.current(point);
+      if (modeRef.current === "move-mass") onMoveMassRef.current(point);
     });
 
     mapRef.current = map;
     return () => {
+      setMapReady(false);
       map.remove();
       mapRef.current = null;
     };
@@ -212,21 +244,62 @@ export function SpatialMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
     setGeoJson(map, "site", scene.site);
     setGeoJson(map, "buildings", scene.buildings);
     setGeoJson(map, "shadows", scene.shadows);
-  }, [scene]);
+  }, [mapReady, scene]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
     fitSite(map, site);
-  }, [site.id]);
+  }, [mapReady, site.id]);
+
+  useEffect(() => {
+    if (site.source === "demo") {
+      setContextBuildings(emptyContextBuildings);
+      setContextSource("건물 컨텍스트 없음");
+      return;
+    }
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      lon: String(site.center.lon),
+      lat: String(site.center.lat),
+      radius: "350",
+    });
+    void fetch(`/api/context/buildings?${params}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data?.type !== "FeatureCollection") return;
+        setContextBuildings(data as FeatureCollection<Polygon | MultiPolygon>);
+        const source = data.features?.[0]?.properties?.source;
+        setContextSource(
+          typeof source === "string" && source
+            ? source
+            : data.features?.length
+              ? "건물 GeoJSON"
+              : "건물 컨텍스트 없음",
+        );
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) {
+          setContextBuildings(emptyContextBuildings);
+          setContextSource("건물 컨텍스트 없음");
+        }
+      });
+    return () => controller.abort();
+  }, [site.center.lat, site.center.lon, site.id, site.source]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    setGeoJson(map, "context-buildings", contextBuildings);
+  }, [contextBuildings, mapReady]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
     const sun = solarPositionAt(date, minutes, site.center.lat, site.center.lon);
     const polar = Math.max(5, Math.min(100, 90 - sun.altitudeDeg));
     map.setLight({
@@ -238,7 +311,7 @@ export function SpatialMap({
     if (map.getLayer("terrain-hillshade")) {
       map.setPaintProperty("terrain-hillshade", "hillshade-illumination-direction", sun.azimuthDeg);
     }
-  }, [date, minutes, site.center.lat, site.center.lon]);
+  }, [date, mapReady, minutes, site.center.lat, site.center.lon]);
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
@@ -253,6 +326,9 @@ export function SpatialMap({
         <div className="text-[10px] font-bold text-[var(--primary)]">선택 부지</div>
         <div className="mt-0.5 max-w-[260px] truncate text-xs font-semibold text-white">
           {site.address || site.name}
+        </div>
+        <div className="mt-1 text-[9px] text-[#8f9ca7]">
+          {contextSource} · 주변 건물 {contextBuildings.features.length.toLocaleString()}개
         </div>
       </div>
     </div>
