@@ -13,7 +13,7 @@ let nominatimNextAllowedAt = 0;
 
 async function withNominatimRateLimit<T>(operation: () => Promise<T>): Promise<T> {
   const previous = nominatimQueue;
-  let release = () => undefined;
+  let release: () => void = () => {};
   nominatimQueue = new Promise<void>((resolve) => {
     release = resolve;
   });
