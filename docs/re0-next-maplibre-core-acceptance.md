@@ -21,9 +21,10 @@
 
 ## RE0-04 Building context
 - nearby context buildings are returned as GeoJSON.
-- first slice uses OpenStreetMap building footprints with explicit source labeling.
-- height uses explicit OSM height, then building levels, then a 9 m fallback.
-- this adapter is temporary and must be replaced by Korean GIS building integrated information without changing the GeoJSON rendering contract.
+- `auto` provider tries VWorld `F_FAC_BUILDING` first and falls back to OpenStreetMap.
+- both providers normalize Polygon/MultiPolygon features into the same GeoJSON contract.
+- height uses explicit height fields first, then floor-count × 3.2 m, then a 9 m fallback.
+- exact VWorld building-layer runtime compatibility is not accepted until observed with a valid production key.
 
 ## RE0-05 Solar SSOT
 - SunCalc powers canonical solar azimuth / altitude.
@@ -38,7 +39,7 @@
 - MapLibre sources never become state owners.
 
 ## Known gaps before merge
-- VWorld / 국토부 GIS건물통합정보 adapter not yet connected; OSM context is temporary.
+- VWorld-first building adapter is connected but its exact `F_FAC_BUILDING` runtime compatibility is still unverified; `auto` falls back to OSM.
 - free-polygon drawing, A/B UI, View Impact and WebMCP parity must be restored on the new renderer before this branch replaces main.
 - package lock should be regenerated once the Next dependency set is finalized.
 
