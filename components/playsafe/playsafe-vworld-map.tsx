@@ -81,29 +81,8 @@ function waitForVWorldBootstrap(timeoutMs = 8_000) {
   });
 }
 
-function loadVWorldScript(apiKey: string) {
-  const runtime = window as VWorldWindow;
-  if (runtime.vw?.Map) return Promise.resolve();
-
-  const existing = document.querySelector<HTMLScriptElement>('script[data-playsafe-vworld="true"]');
-  if (existing) return waitForVWorldBootstrap();
-
-  return new Promise<void>((resolve, reject) => {
-    const script = document.createElement("script");
-    script.dataset.playsafeVworld = "true";
-    script.async = true;
-    const params = new URLSearchParams({
-      version: "3.0",
-      apiKey,
-      domain: window.location.hostname,
-    });
-    script.src = "https://map.vworld.kr/js/webglMapInit.js.do?" + params;
-    script.onload = () => {
-      void waitForVWorldBootstrap().then(resolve).catch(reject);
-    };
-    script.onerror = () => reject(new Error("VWorld WebGL script failed"));
-    document.head.appendChild(script);
-  });
+function loadVWorldScript() {
+  return waitForVWorldBootstrap();
 }
 
 function clearPlaySafeEntities(viewer: any) {
@@ -116,13 +95,11 @@ function clearPlaySafeEntities(viewer: any) {
 }
 
 export function PlaySafeVWorldMap({
-  apiKey,
   snapshot,
   selectedPlaceId,
   onSelectPlace,
   onUnavailable,
 }: {
-  apiKey: string;
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
   onSelectPlace: (placeId: string) => void;
@@ -139,7 +116,7 @@ export function PlaySafeVWorldMap({
   useEffect(() => {
     let disposed = false;
 
-    void loadVWorldScript(apiKey)
+    void loadVWorldScript()
       .then(() => {
         if (disposed) return;
         const runtime = window as VWorldWindow;
@@ -225,7 +202,7 @@ export function PlaySafeVWorldMap({
       }
       mapRef.current = null;
     };
-  }, [apiKey, onUnavailable, snapshot.query.center.lat, snapshot.query.center.lon]);
+  }, [onUnavailable, snapshot.query.center.lat, snapshot.query.center.lon]);
 
   useEffect(() => {
     const apply = () => {

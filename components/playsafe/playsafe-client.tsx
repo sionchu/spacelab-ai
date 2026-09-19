@@ -45,7 +45,7 @@ function scoreBackground(score: number) {
   return "border-[#ef8795]/30 bg-[#29191d]";
 }
 
-export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
+export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const initial = useMemo(() => kstNowParts(), []);
   const [center, setCenter] = useState<GeoPoint>({ lon: 127.11052, lat: 37.39483 });
   const [centerLabel, setCenterLabel] = useState("판교역 인근");
@@ -62,7 +62,7 @@ export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string>();
   const [webMcpSupported, setWebMcpSupported] = useState(false);
-  const [renderer, setRenderer] = useState<"vworld" | "analysis">(vworldApiKey ? "vworld" : "analysis");
+  const [renderer, setRenderer] = useState<"vworld" | "analysis">(vworldEnabled ? "vworld" : "analysis");
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -165,8 +165,8 @@ export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
         <div className="hidden items-center gap-1 rounded-xl border border-white/8 bg-[#0b1218] p-1 md:flex">
           <button
             type="button"
-            disabled={!vworldApiKey}
-            onClick={() => vworldApiKey && setRenderer("vworld")}
+            disabled={!vworldEnabled}
+            onClick={() => vworldEnabled && setRenderer("vworld")}
             className={"rounded-lg px-2.5 py-1.5 text-[9px] font-bold transition " + (renderer === "vworld"
               ? "bg-[#1d2b35] text-[#f2c45d]"
               : "text-[#778690] hover:text-white")}
@@ -194,9 +194,8 @@ export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
       </header>
 
       <section className="relative min-h-0 overflow-hidden">
-        {snapshot && renderer === "vworld" && vworldApiKey && (
+        {snapshot && renderer === "vworld" && vworldEnabled && (
           <PlaySafeVWorldMap
-            apiKey={vworldApiKey}
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
             onSelectPlace={setSelectedPlaceId}
@@ -204,7 +203,7 @@ export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
           />
         )}
 
-        {snapshot && (renderer === "analysis" || !vworldApiKey) && (
+        {snapshot && (renderer === "analysis" || !vworldEnabled) && (
           <PlaySafeMap
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
