@@ -92,4 +92,4 @@ Railway note: the staged SpaceLab source was corrected to the accepted runtime c
 
 ## Next concrete action
 
-Run `docs/codex-aside-browser-acceptance.md` in the Codex Aside browser. Runtime/server acceptance is already recorded in `docs/re0-runtime-acceptance-2026-09-19.md`. Keep PR #15 draft until the Codex browser report is reviewed.
+Re-run the UI portion of `docs/codex-aside-browser-acceptance.md` against production after the deployed `manualSite()` recursion fix (`4208dbc`). Pass 1 is recorded in `docs/codex-aside-browser-acceptance-pass1-2026-09-19.md`. If `document.modelContext` remains undefined in Codex Aside Browser, record WebMCP as `BLOCKED_BY_HOST` rather than changing application architecture. Keep PR #15 draft until the UI rerun is reviewed.
