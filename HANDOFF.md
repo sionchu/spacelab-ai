@@ -29,6 +29,10 @@ Branch: `codex/next-maplibre-v1`
 - MapLibre snapshot capture with presentation-only reference image flow
 - server-only `/api/concept-view` image route; OpenAI key is never exposed to the browser
 - Concept View panel for project type/style, context preview and generated result
+- top-level WebMCP registration through `document.modelContext.registerTool`
+- WebMCP reads and mutations reuse the same canonical application actions as the UI
+- read-only WebMCP direct-sun and GeoJSON View Impact analysis tools restored
+- WebMCP mutations wait for canonical workspace change before returning verification output
 - old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
 - canonical Site / BuildingMass / Scenario / actions / analysis retained
 
@@ -58,4 +62,4 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 
 ## Next concrete action
 
-Restore WebMCP parity on the Next.js/MapLibre action and analysis surfaces without reintroducing renderer-owned state.
+Deploy the current RE0 head to the preview runtime, verify map/VWorld/Concept View configuration, then perform Site Tools discovery and representative read/write analysis calls in a supported ChatGPT desktop built-in browser before replacing main.
