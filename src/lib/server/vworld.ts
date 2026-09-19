@@ -1,4 +1,4 @@
-import type { GeoPoint, Site } from "./types";
+import type { GeoPoint, Site } from "@/types";
 
 export type AddressSearchResult = {
   id: string;
@@ -7,7 +7,13 @@ export type AddressSearchResult = {
   point: GeoPoint;
 };
 
-function buildUrl(base: string, params: Record<string, string | number | boolean | undefined>) {
+function requireKey() {
+  const key = process.env.VWORLD_API_KEY?.trim();
+  if (!key) throw new Error("VWORLD_API_KEY is not configured.");
+  return key;
+}
+
+function buildUrl(base: string, params: Record<string, string | number | undefined>) {
   const url = new URL(base);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
@@ -15,58 +21,28 @@ function buildUrl(base: string, params: Record<string, string | number | boolean
   return url;
 }
 
-function requestJsonp(url: URL) {
-  return new Promise<any>((resolve, reject) => {
-    const callbackName = `__spacelab_vworld_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const script = document.createElement("script");
-    const cleanup = () => {
-      script.remove();
-      delete (window as any)[callbackName];
-    };
-    const timeout = window.setTimeout(() => {
-      cleanup();
-      reject(new Error("VWorld request timed out"));
-    }, 12_000);
-    (window as any)[callbackName] = (payload: unknown) => {
-      window.clearTimeout(timeout);
-      cleanup();
-      resolve(payload);
-    };
-    url.searchParams.set("callback", callbackName);
-    script.src = url.toString();
-    script.onerror = () => {
-      window.clearTimeout(timeout);
-      cleanup();
-      reject(new Error("VWorld request failed"));
-    };
-    document.head.appendChild(script);
+async function requestJson(url: URL) {
+  const response = await fetch(url, {
+    headers: { Accept: "application/json" },
+    next: { revalidate: 300 },
   });
-}
-
-async function requestVWorld(url: URL) {
-  try {
-    const response = await fetch(url.toString(), { mode: "cors" });
-    if (response.ok) return await response.json();
-  } catch {
-    // Older VWorld examples use JSONP. Keep it as a browser fallback.
-  }
-  return requestJsonp(url);
+  if (!response.ok) throw new Error(`VWorld request failed: ${response.status}`);
+  return response.json();
 }
 
 function responseStatus(payload: any) {
   return payload?.response?.status ?? payload?.status;
 }
 
-export async function searchVWorldAddress(
-  apiKey: string,
-  query: string,
-  domain?: string,
-): Promise<AddressSearchResult[]> {
+export async function searchVWorldAddress(query: string): Promise<AddressSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
+  const key = requireKey();
+  const domain = process.env.VWORLD_DOMAIN?.trim() || undefined;
   const categories = ["ROAD", "PARCEL"] as const;
   const all: AddressSearchResult[] = [];
+
   for (const category of categories) {
     const url = buildUrl("https://api.vworld.kr/req/search", {
       service: "search",
@@ -79,21 +55,21 @@ export async function searchVWorldAddress(
       type: "ADDRESS",
       category,
       format: "json",
-      key: apiKey,
+      key,
       domain,
     });
-    const payload = await requestVWorld(url);
+    const payload = await requestJson(url);
     if (responseStatus(payload) !== "OK") continue;
+
     const items = payload?.response?.result?.items ?? [];
     for (const item of items) {
       const lon = Number(item?.point?.x);
       const lat = Number(item?.point?.y);
       if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
       const address = String(item?.address?.road || item?.address?.parcel || item?.title || trimmed);
-      const title = String(item?.title || address);
       all.push({
         id: `${category}-${lon}-${lat}-${all.length}`,
-        title,
+        title: String(item?.title || address),
         address,
         point: { lon, lat },
       });
@@ -102,9 +78,9 @@ export async function searchVWorldAddress(
 
   const seen = new Set<string>();
   return all.filter((item) => {
-    const key = `${item.point.lon.toFixed(7)},${item.point.lat.toFixed(7)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+    const id = `${item.point.lon.toFixed(7)},${item.point.lat.toFixed(7)}`;
+    if (seen.has(id)) return false;
+    seen.add(id);
     return true;
   }).slice(0, 8);
 }
@@ -118,11 +94,12 @@ function firstBoundary(geometry: any): GeoPoint[] {
     .map((coordinate: unknown) => Array.isArray(coordinate)
       ? { lon: Number(coordinate[0]), lat: Number(coordinate[1]) }
       : undefined)
-    .filter((point: GeoPoint | undefined): point is GeoPoint => Boolean(point && Number.isFinite(point.lon) && Number.isFinite(point.lat)));
+    .filter((point: GeoPoint | undefined): point is GeoPoint => Boolean(
+      point && Number.isFinite(point.lon) && Number.isFinite(point.lat),
+    ));
 }
 
-function centroid(boundary: GeoPoint[], fallback: GeoPoint) {
-  if (!boundary.length) return fallback;
+function centroid(boundary: GeoPoint[], fallback: GeoPoint): GeoPoint {
   const points = boundary.length > 2
     && boundary[0].lon === boundary[boundary.length - 1].lon
     && boundary[0].lat === boundary[boundary.length - 1].lat
@@ -135,28 +112,25 @@ function centroid(boundary: GeoPoint[], fallback: GeoPoint) {
   };
 }
 
-export async function getVWorldParcelAtPoint(
-  apiKey: string,
-  point: GeoPoint,
-  domain?: string,
-  label?: string,
-): Promise<Site> {
+export async function getVWorldParcelAtPoint(point: GeoPoint, label?: string): Promise<Site> {
+  const key = requireKey();
+  const domain = process.env.VWORLD_DOMAIN?.trim() || undefined;
   const url = buildUrl("https://api.vworld.kr/req/data", {
     service: "data",
     request: "GetFeature",
     version: "2.0",
     data: "LP_PA_CBND_BUBUN",
-    geometry: true,
-    attribute: true,
+    geometry: "true",
+    attribute: "true",
     crs: "EPSG:4326",
     geomFilter: `POINT(${point.lon} ${point.lat})`,
     size: 1,
     page: 1,
     format: "json",
-    key: apiKey,
+    key,
     domain,
   });
-  const payload = await requestVWorld(url);
+  const payload = await requestJson(url);
   const feature = payload?.response?.result?.featureCollection?.features?.[0];
   const boundary = firstBoundary(feature?.geometry);
   const properties = feature?.properties ?? {};
@@ -166,7 +140,7 @@ export async function getVWorldParcelAtPoint(
     const center = centroid(boundary, point);
     return {
       id: pnu ? `parcel-${pnu}` : `parcel-${center.lon.toFixed(7)}-${center.lat.toFixed(7)}`,
-      name: label || properties?.full_nm || properties?.jibun || "Selected parcel",
+      name: label || properties?.full_nm || properties?.jibun || "선택 필지",
       address: label,
       center,
       boundary,
@@ -179,7 +153,7 @@ export async function getVWorldParcelAtPoint(
   const deltaLat = 18 / 111_320;
   return {
     id: `point-${point.lon.toFixed(7)}-${point.lat.toFixed(7)}`,
-    name: label || "Selected map point",
+    name: label || "선택 위치",
     address: label,
     center: point,
     boundary: [

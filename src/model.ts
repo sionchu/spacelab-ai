@@ -1,3 +1,4 @@
+import SunCalc from "suncalc";
 import type {
   BuildingMass,
   CreateMassInput,
@@ -140,85 +141,52 @@ function degreesToRadians(value: number) {
   return (value * Math.PI) / 180;
 }
 
-function radiansToDegrees(value: number) {
-  return (value * 180) / Math.PI;
-}
-
-function normalizeDegrees(value: number) {
-  return ((value % 360) + 360) % 360;
-}
-
-function clampUnit(value: number) {
-  return Math.min(1, Math.max(-1, value));
-}
-
 function parseLocalDateTime(localDateTime: string, timeZoneOffsetMinutes: number) {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(localDateTime);
-  if (!match) return { date: new Date(Number.NaN), year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0 };
+  if (!match) return new Date(Number.NaN);
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   const second = Number(match[6] ?? 0);
-  const date = new Date(Date.UTC(year, month - 1, day, hour, minute, second) - timeZoneOffsetMinutes * 60_000);
-  return { date, year, month, day, hour, minute, second };
+  return new Date(
+    Date.UTC(year, month - 1, day, hour, minute, second)
+      - timeZoneOffsetMinutes * 60_000,
+  );
 }
 
-/** NOAA solar position approximation using the selected site and local time. */
+/**
+ * Shared solar SSOT powered by SunCalc.
+ * Azimuth is normalized to compass degrees: north=0, east=90.
+ */
 export function solarPosition(
   location: GeoPoint,
   localDateTime: string,
   timeZoneOffsetMinutes = siteTimeZoneOffsetMinutes,
 ): SolarPosition {
-  const parsed = parseLocalDateTime(localDateTime, timeZoneOffsetMinutes);
-  if (Number.isNaN(parsed.date.getTime())) {
-    return { azimuthDeg: Number.NaN, elevationDeg: Number.NaN, declinationDeg: Number.NaN, equationOfTimeMinutes: Number.NaN, isDaylight: false };
+  const date = parseLocalDateTime(localDateTime, timeZoneOffsetMinutes);
+  if (Number.isNaN(date.getTime())) {
+    return {
+      azimuthDeg: Number.NaN,
+      elevationDeg: Number.NaN,
+      declinationDeg: Number.NaN,
+      equationOfTimeMinutes: Number.NaN,
+      isDaylight: false,
+    };
   }
 
-  const julianDay = parsed.date.getTime() / 86_400_000 + 2_440_587.5;
-  const julianCentury = (julianDay - 2_451_545) / 36_525;
-  const geomMeanLongSun = normalizeDegrees(280.46646 + julianCentury * (36_000.76983 + julianCentury * 0.0003032));
-  const geomMeanAnomSun = 357.52911 + julianCentury * (35_999.05029 - 0.0001537 * julianCentury);
-  const eccentricity = 0.016708634 - julianCentury * (0.000042037 + 0.0000001267 * julianCentury);
-  const anomalyRadians = degreesToRadians(geomMeanAnomSun);
-  const sunEquationOfCenter = Math.sin(anomalyRadians) * (1.914602 - julianCentury * (0.004817 + 0.000014 * julianCentury))
-    + Math.sin(2 * anomalyRadians) * (0.019993 - 0.000101 * julianCentury)
-    + Math.sin(3 * anomalyRadians) * 0.000289;
-  const sunTrueLongitude = geomMeanLongSun + sunEquationOfCenter;
-  const omega = degreesToRadians(125.04 - 1_934.136 * julianCentury);
-  const sunApparentLongitude = sunTrueLongitude - 0.00569 - 0.00478 * Math.sin(omega);
-  const meanObliquity = 23 + (26 + ((21.448 - julianCentury * (46.815 + julianCentury * (0.00059 - julianCentury * 0.001813))) / 60)) / 60;
-  const correctedObliquity = meanObliquity + 0.00256 * Math.cos(omega);
-  const obliquityRadians = degreesToRadians(correctedObliquity);
-  const apparentLongitudeRadians = degreesToRadians(sunApparentLongitude);
-  const declinationRadians = Math.asin(Math.sin(obliquityRadians) * Math.sin(apparentLongitudeRadians));
-  const declinationDeg = radiansToDegrees(declinationRadians);
-  const variance = Math.tan(obliquityRadians / 2) ** 2;
-  const equationOfTimeMinutes = 4 * radiansToDegrees(
-    variance * Math.sin(2 * degreesToRadians(geomMeanLongSun))
-      - 2 * eccentricity * Math.sin(anomalyRadians)
-      + 4 * eccentricity * variance * Math.sin(anomalyRadians) * Math.cos(2 * degreesToRadians(geomMeanLongSun))
-      - 0.5 * variance ** 2 * Math.sin(4 * degreesToRadians(geomMeanLongSun))
-      - 1.25 * eccentricity ** 2 * Math.sin(2 * anomalyRadians),
-  );
+  const position = SunCalc.getPosition(date, location.lat, location.lon);
+  const elevationDeg = position.altitude * 180 / Math.PI;
+  const azimuthDeg = ((position.azimuth * 180 / Math.PI) + 180 + 360) % 360;
 
-  const localMinutes = parsed.hour * 60 + parsed.minute + parsed.second / 60;
-  const trueSolarTime = ((localMinutes + equationOfTimeMinutes + 4 * location.lon - timeZoneOffsetMinutes) % 1_440 + 1_440) % 1_440;
-  const hourAngleDeg = trueSolarTime / 4 - 180;
-  const latitudeRadians = degreesToRadians(location.lat);
-  const hourAngleRadians = degreesToRadians(hourAngleDeg);
-  const zenithRadians = Math.acos(clampUnit(
-    Math.sin(latitudeRadians) * Math.sin(declinationRadians)
-      + Math.cos(latitudeRadians) * Math.cos(declinationRadians) * Math.cos(hourAngleRadians),
-  ));
-  const elevationDeg = 90 - radiansToDegrees(zenithRadians);
-  const azimuthDeg = normalizeDegrees(radiansToDegrees(Math.atan2(
-    Math.sin(hourAngleRadians),
-    Math.cos(hourAngleRadians) * Math.sin(latitudeRadians) - Math.tan(declinationRadians) * Math.cos(latitudeRadians),
-  )) + 180);
-
-  return { azimuthDeg, elevationDeg, declinationDeg, equationOfTimeMinutes, isDaylight: elevationDeg > 0 };
+  return {
+    azimuthDeg,
+    elevationDeg,
+    declinationDeg: Number.NaN,
+    equationOfTimeMinutes: Number.NaN,
+    isDaylight: elevationDeg > 0,
+  };
 }
 
 function cross(origin: LocalPoint, a: LocalPoint, b: LocalPoint) {
