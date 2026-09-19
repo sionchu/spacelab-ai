@@ -1,23 +1,36 @@
 {
   "name": "spacelab-ai",
   "private": true,
-  "version": "0.1.0",
-  "type": "module",
+  "version": "0.2.0",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview --host 0.0.0.0",
-    "typecheck": "tsc -b --pretty false"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "typescript": "latest",
+    "@radix-ui/react-dialog": "latest",
+    "@radix-ui/react-slider": "latest",
+    "@radix-ui/react-tabs": "latest",
+    "@turf/turf": "^7.2.0",
+    "class-variance-authority": "latest",
+    "clsx": "latest",
+    "lucide-react": "latest",
+    "maplibre-gl": "^6.10.0",
+    "next": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "suncalc": "^1.9.0",
+    "tailwind-merge": "latest"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "latest",
+    "@types/geojson": "latest",
+    "@types/node": "latest",
     "@types/react": "latest",
-    "@types/react-dom": "latest"
+    "@types/react-dom": "latest",
+    "@types/suncalc": "latest",
+    "tailwindcss": "latest",
+    "typescript": "latest"
   }
 }
