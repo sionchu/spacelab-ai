@@ -26,6 +26,9 @@ SpaceLab is an early-stage spatial planning workstation. The application keeps s
 - 09:00–18:00 time slider
 - SunCalc solar azimuth/altitude driving MapLibre light and terrain illumination
 - deterministic SpaceLab ground-shadow polygon
+- VWorld/OSM surrounding-building GeoJSON with normalized height extrusion
+- saved viewpoint and deterministic surrounding-building View Impact comparison
+- presentation-only Concept View from the current MapLibre snapshot and active mass
 - responsive desktop/mobile planning UI
 
 ## Architecture
@@ -42,10 +45,12 @@ Next.js UI
    │    ├─ GeoJSON parcel
    │    ├─ fill-extrusion masses
    │    ├─ DEM terrain
-   │    └─ SunCalc light
+   │    ├─ SunCalc light
+   │    └─ surrounding-building GeoJSON
    │
    └─ Next.js Route Handlers
-        └─ VWorld address / cadastral APIs
+        ├─ VWorld address / cadastral / building APIs
+        └─ server-only Concept View image generation
 ```
 
 MapLibre is a renderer, not the state owner. `src/types.ts`, `src/model.ts`, `src/actions.ts`, and `src/analysis.ts` remain the canonical domain/analysis layer.
@@ -67,13 +72,24 @@ VWORLD_DOMAIN=localhost
 
 Do not expose the VWorld key through `NEXT_PUBLIC_*`.
 
+Concept View is optional and requires a server-only OpenAI key:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
+OPENAI_IMAGE_SIZE=1536x1024
+OPENAI_IMAGE_QUALITY=medium
+```
+
+The generated image is presentation-only and never mutates the canonical site, scenario, mass, sunlight, or View Impact geometry.
+
 ## Deployment
 
 The project is structured for Vercel/Next.js deployment. Configure the same server-side environment variables in the deployment environment.
 
 ## Boundaries
 
-SpaceLab is for early spatial planning and alternative comparison. It is not a legal zoning or sunlight-right determination, permit engine, CAD/BIM replacement, structural analysis tool, or substitute for licensed professional review.
+SpaceLab is for early spatial planning and alternative comparison. It is not a legal zoning, sunlight-right, or view-right determination, permit engine, CAD/BIM replacement, structural analysis tool, or substitute for licensed professional review. Concept View images are illustrative, not analysis evidence.
 
 ## License
 
