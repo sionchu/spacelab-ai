@@ -25,6 +25,10 @@ Branch: `codex/next-maplibre-v1`
 - shared surrounding-building GeoJSON context for renderer and analysis
 - deterministic View Impact from a saved viewpoint against surrounding building footprints/heights
 - active/compare View Impact readout with viewpoint marker and eye-height control
+- Concept View request model derived from canonical site/scenario plus current MapLibre camera
+- MapLibre snapshot capture with presentation-only reference image flow
+- server-only `/api/concept-view` image route; OpenAI key is never exposed to the browser
+- Concept View panel for project type/style, context preview and generated result
 - old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
 - canonical Site / BuildingMass / Scenario / actions / analysis retained
 
@@ -50,7 +54,8 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 - do not move design state into GeoJSON/map sources
 - no legal zoning/permit/sunlight-right conclusions
 - no generated Concept View image may feed back into analysis geometry
+- image generation remains user-triggered and may incur provider usage cost
 
 ## Next concrete action
 
-Restore Concept View on the Next.js/MapLibre shell without feeding generated imagery back into analysis geometry. After renderer/analysis parity, restore WebMCP parity.
+Restore WebMCP parity on the Next.js/MapLibre action and analysis surfaces without reintroducing renderer-owned state.
