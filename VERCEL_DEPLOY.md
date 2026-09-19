@@ -9,7 +9,7 @@ Set these in the Vercel project:
 ```bash
 VWORLD_API_KEY=...
 VWORLD_DOMAIN=<production host if required by the VWorld key policy>
-NEXT_PUBLIC_DEM_TILEJSON=https://demotiles.maplibre.org/terrain-tiles/tiles.json
+NEXT_PUBLIC_DEM_TILE_TEMPLATE=https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png
 NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M=350
 SPACELAB_BUILDING_PROVIDER=auto
 ```
