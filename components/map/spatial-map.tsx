@@ -361,7 +361,9 @@ export function SpatialMap({
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
       <div className="pointer-events-none absolute left-3 top-3 rounded-xl border border-white/10 bg-[#101820]/90 px-3 py-2 shadow-lg backdrop-blur-sm">
-        <div className="text-[10px] font-bold text-[var(--primary)]">선택 부지</div>
+        <div className="text-[10px] font-bold text-[var(--primary)]">
+          {site.source === "manual-point" ? "임시 위치 경계" : "선택 부지"}
+        </div>
         <div className="mt-0.5 max-w-[260px] truncate text-xs font-semibold text-white">
           {site.address || site.name}
         </div>
