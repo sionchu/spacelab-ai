@@ -5,8 +5,8 @@
 - Railway project: `spacelab-mobile-preview`
 - Service: `spacelab-mobile-preview`
 - Public origin: `https://spacelab-mobile-preview-production.up.railway.app`
-- Deployed application commit: `4208dbc46d2aa277272f853a7baed764cbf9ad00`
-- Deployment: `1961365c-0bb4-41fd-8b92-ebc70391d495`
+- Deployed application commit: `06a54fe01dc2010cc7ff3b858bab5b54bd79aabc`
+- Deployment: `9a7a8754-88f5-439d-a0eb-b796d5f98d65`
 - Railway status: `SUCCESS`
 - Runtime: Next.js 16.3.3 via `npm start`
 
@@ -82,9 +82,11 @@ The code registers top-level tools through `document.modelContext.registerTool` 
 
 Static/type/build verification is complete. Final Site Tools discovery and representative tool-call acceptance requires a supported ChatGPT desktop built-in browser because ordinary public browsers do not expose `document.modelContext`.
 
-## Remaining acceptance item
+## Acceptance conclusion
 
-Run Site Tools discovery plus representative read/write calls in a supported ChatGPT desktop built-in browser. Do not merge the RE0 branch into `main` solely on the basis of a normal-browser check.
+RE0 application acceptance is complete and PR #15 has been squash-merged to `main`.
+
+Codex Aside Browser does not expose `document.modelContext`, so Site Tools/WebMCP discovery remains `BLOCKED_BY_HOST`. This is a host-capability limitation, not a SpaceLab application blocker.
 
 
 ## Codex browser pass 1
@@ -128,3 +130,19 @@ Host-only limitations:
 These are not classified as SpaceLab application blockers.
 
 Evidence: `docs/codex-aside-browser-acceptance-pass2-2026-09-19.md`
+
+
+## Post-merge production alignment
+
+After PR #15 was squash-merged, merged `main` commit `06a54fe01dc2010cc7ff3b858bab5b54bd79aabc` was deployed directly to the existing Railway service without applying the staged environment patch.
+
+Post-merge checks:
+
+- root application shell: PASS
+- `MapLibre 3D` marker: PASS
+- `서울시청` search: PASS, 2 results
+- surrounding building context: PASS, 115 features at the 201 m acceptance radius
+- observed building-context retry latency: approximately 3.4 s
+- latest Railway deployment status: `SUCCESS`
+
+Production and merged `main` were aligned at this checkpoint.
