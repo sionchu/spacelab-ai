@@ -16,7 +16,7 @@ export const siteTimeZoneOffsetMinutes = 540;
 const demoCenter = { lon: 127.11052, lat: 37.39483 };
 const demoSite: Site = {
   id: "demo-pangyo",
-  name: "Select a real site",
+  name: "부지를 선택하세요",
   center: demoCenter,
   boundary: [
     { lon: demoCenter.lon - 0.00022, lat: demoCenter.lat - 0.00016 },

@@ -1,39 +1,112 @@
 # SpaceLab AI handoff
 
-## Objective
+## Current checkpoint
 
-Build a public `spacelab-ai` V0: a VWorld-backed Spatial Decision Canvas for early building-massing decisions.
+SpaceLab is migrating from the original Vite + VWorld WebGL viewer to a Next.js + MapLibre architecture.
+
+Branch: `codex/next-maplibre-v1`
 
 ## Completed in this checkpoint
 
-- Defined canonical `BuildingMass`, `Scenario`, and `SpatialWorkspace` state with shared human/WebMCP application actions.
-- Added rectangular/free-polygon mass editing, branching, A/B comparison, geolocation/date/time solar geometry, and shadow polygon rendering through the VWorld and fallback adapters.
-- Added local `.codex/.env` key loading and hosted `VITE_VWORLD_API_KEY` / `VITE_VWORLD_DOMAIN` boundaries without committing secrets.
-- Established the project visual source of truth in `DESIGN.md` from the supplied SpaceLab workstation specification.
-- Reworked the UI without duplicating application state: canvas-first workstation layout, ancestry-aware Scenario Navigator, compact Design/Compare mode, engineering-style inspector, and bottom SUN / SHADOW timeline.
+- Next.js 16 App Router shell
+- TypeScript strict configuration
+- shadcn-compatible UI primitives
+- MapLibre GL JS renderer
+- OSM temporary basemap
+- raster DEM terrain + hillshade
+- selected parcel GeoJSON
+- planned building `fill-extrusion`
+- SunCalc v2 time-of-day light
+- 09:00–18:00 slider
+- deterministic SpaceLab shadow polygon retained
+- VWorld address/parcel requests moved behind Next.js Route Handlers
+- VWorld `F_FAC_BUILDING` surrounding-building GeoJSON with OSM fallback
+- surrounding building height normalization and MapLibre fill-extrusion
+- shared surrounding-building GeoJSON context for renderer and analysis
+- deterministic View Impact from a saved viewpoint against surrounding building footprints/heights
+- active/compare View Impact readout with viewpoint marker and eye-height control
+- Concept View request model derived from canonical site/scenario plus current MapLibre camera
+- MapLibre snapshot capture with presentation-only reference image flow
+- server-only `/api/concept-view` image route; OpenAI key is never exposed to the browser
+- Concept View panel for project type/style, context preview and generated result
+- top-level WebMCP registration through `document.modelContext.registerTool`
+- WebMCP reads and mutations reuse the same canonical application actions as the UI
+- read-only WebMCP direct-sun and GeoJSON View Impact analysis tools restored
+- WebMCP mutations wait for canonical workspace change before returning verification output
+- VWorld-first provider access now degrades to rate-limited Nominatim search, explicit manual-point parcel fallback, and mirrored Overpass building context during upstream outages
+- old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
+- canonical Site / BuildingMass / Scenario / actions / analysis retained
 
-## Current checkpoint
+## Verification
 
-- Design-pass commit `25e60e6dbcc852caa9d340c6dfc2035f61a6dad2` is pushed to the public GitHub repository and the connected Sites source repository.
-- The matching private Sites version is deployed at `https://spacelab-ai.leeje92.chatgpt.site`.
-- `src/webmcp.ts` was not changed; the design pass only changes presentation and local UI mode state.
-- Competition baseline acceptance is recorded in `docs/competition-baseline-acceptance-2026-09-18.md`; the first gate is blocked because the production access mode is `custom` and a fresh browser receives the login gate.
+Latest branch verification passes:
 
-## Verification evidence
+```bash
+npm install
+npm run typecheck
+npm run build
+git diff --check
+```
 
-- `npm install` → 25 packages audited, 0 vulnerabilities.
-- `npm run typecheck` → exit 0 after the design pass.
-- `npm run build` → exit 0; Vite production bundle emitted under ignored `dist/`.
-- `git diff --check` → no whitespace errors.
-- CUA local preview at `http://127.0.0.1:4175/` → direct screenshot showed `VWorld Live`, real VWorld imagery/terrain, A/B mass and shadow overlays, a canvas-docked SUN / SHADOW timeline, and Compare mode metrics (`33.6 / 21.6 m`, delta `12.0 m`).
-- CUA Design mode screenshot → canvas remained dominant while Scenario Navigator, inspector, and timeline stayed visible without a permanent AI banner or duplicate scenario tree.
+## Deployment note
+
+The code is Vercel-compatible. The existing Railway preview service requires the Next.js `npm start` command rather than the old static Vite server.
 
 ## Boundaries
 
-- Do not commit any `.env`, API key, token, or generated secret.
-- Do not claim live VWorld or real WebMCP acceptance until the corresponding runtime is opened and observed.
-- Do not expand V0 into legal sunlight-right determination, full CAD/BIM, structural analysis, or unrelated product features.
+- do not expose VWorld or provider API keys through public build variables
+- MapLibre is renderer-only
+- do not move design state into GeoJSON/map sources
+- no legal zoning/permit/sunlight-right conclusions
+- no generated Concept View image may feed back into analysis geometry
+- image generation remains user-triggered and may incur provider usage cost
 
-## Next concrete action
+## Responsibility split
 
-The Site owner must decide whether to make the production audience public. Then rerun the unauthenticated visual gate and the three requested Site Tools calls without changing features, architecture, or UI.
+### Codex Aside browser
+
+Browser-only acceptance is defined in `docs/codex-aside-browser-acceptance.md`.
+
+Codex owns:
+
+- rendered UI click-through
+- MapLibre visual interaction checks
+- `document.modelContext` / Site Tools discovery
+- representative WebMCP read/write calls against the live page
+
+Codex does not own Railway configuration, deployment bookkeeping, PR merge, or Concept View image generation.
+
+### ChatGPT project workflow
+
+This workflow owns:
+
+- repository audit and smallest-scope fixes
+- GitHub CI/type/build/diff verification
+- exact-commit Railway deployment
+- provider/runtime log diagnosis
+- public HTTP/API acceptance
+- canonical acceptance/HANDOFF/PR documentation
+- deciding the next technical action from Codex acceptance evidence
+
+Railway note: the staged SpaceLab source was corrected to the accepted runtime commit `78b4237a31e3e32235ba1b08fd0c91ec97794c56`. A separate staged deletion for the legacy `vworld-diagnostic` service remains because Railway does not expose an individual unstage action through the available API. It does not affect the current SpaceLab runtime unless the environment patch is explicitly applied.
+
+## Merge readiness
+
+Codex Aside Browser pass 2 is recorded in `docs/codex-aside-browser-acceptance-pass2-2026-09-19.md`.
+
+Application acceptance is PASS:
+
+- production site selection fixed
+- manual-point provenance is explicit
+- surrounding-building context loads
+- mass create/edit works
+- A/B scenario comparison works
+- viewpoint / View Impact works
+- Concept View entry exists without invoking image generation
+
+Host-only limitations are not application blockers:
+
+- Aside Browser cannot switch responsive viewport;
+- Aside Browser does not expose `document.modelContext`, so WebMCP is `BLOCKED_BY_HOST`.
+
+PR #15 may proceed to final merge review. Do not merge automatically; wait for explicit merge instruction.

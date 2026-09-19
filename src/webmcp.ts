@@ -1,38 +1,49 @@
-import { directSunStudy } from "./analysis";
-import type { SunStudySample } from "./analysis";
+import { directSunStudy, planningMetrics } from "./analysis";
 import { getScenario } from "./model";
 import type {
-  AddressSearchResult,
-} from "./vworld-api";
-import type { ApplicationActions, BuildingMass, GeoPoint, Site, SpatialWorkspace, Viewpoint } from "./types";
+  ApplicationActions,
+  CreateMassInput,
+  Footprint,
+  GeoPoint,
+  MassPatch,
+  Site,
+  SpatialWorkspace,
+  Viewpoint,
+} from "./types";
+import { viewImpact, type BuildingContextCollection } from "./view-impact";
 
 declare global {
   interface Document {
     modelContext?: {
-      registerTool: (tool: unknown, options?: { signal?: AbortSignal }) => Promise<void>;
+      registerTool: (
+        tool: {
+          name: string;
+          title?: string;
+          description: string;
+          inputSchema: Record<string, unknown>;
+          annotations?: { readOnlyHint?: boolean };
+          execute: (input: any) => Promise<unknown> | unknown;
+        },
+        options?: { signal?: AbortSignal },
+      ) => Promise<void>;
     };
   }
 }
 
-type ToolBridge = ApplicationActions & {
+export type SpaceLabWebMcpBridge = {
+  actions: ApplicationActions;
   getState: () => SpatialWorkspace;
-  searchLocation: (query: string) => Promise<AddressSearchResult[]>;
+  searchLocation: (query: string) => Promise<unknown>;
   selectSiteAtPoint: (point: GeoPoint, label?: string) => Promise<Site>;
-  sampleSunContext: (point: GeoPoint, samples: SunStudySample[]) => Promise<{ supported: boolean; blockedTimes: string[]; source: string }>;
-  sampleViewImpact: (viewpoint: Viewpoint, site: Site, mass: BuildingMass) => Promise<{
-    supported: boolean;
-    visibleSamples: number;
-    totalSamples: number;
-    visibleRatioPct: number;
-    classification: string;
-    blockedSampleIds: string[];
-    source: string;
-  }>;
+  getBuildingContext: () => BuildingContextCollection;
 };
 
 const pointSchema = {
   type: "object",
-  properties: { xM: { type: "number" }, yM: { type: "number" } },
+  properties: {
+    xM: { type: "number", minimum: -300, maximum: 300 },
+    yM: { type: "number", minimum: -300, maximum: 300 },
+  },
   required: ["xM", "yM"],
   additionalProperties: false,
 };
@@ -43,36 +54,80 @@ const footprintSchema = {
     kind: { type: "string", enum: ["rectangle", "polygon"] },
     widthM: { type: "number", minimum: 6, maximum: 200 },
     depthM: { type: "number", minimum: 6, maximum: 200 },
-    points: { type: "array", minItems: 3, items: pointSchema },
+    points: { type: "array", minItems: 3, maxItems: 32, items: pointSchema },
   },
   required: ["kind"],
   additionalProperties: false,
 };
 
-export function registerSpaceLabTools(bridge: ToolBridge) {
-  if (!document.modelContext) return { supported: false, dispose: () => undefined };
+async function waitForWorkspaceChange(
+  before: SpatialWorkspace,
+  getState: () => SpatialWorkspace,
+  timeoutMs = 800,
+) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 16));
+    const current = getState();
+    if (current !== before) return current;
+  }
+  return getState();
+}
+
+async function applyWorkspaceChange(
+  bridge: SpaceLabWebMcpBridge,
+  action: () => void,
+) {
+  const before = bridge.getState();
+  action();
+  return waitForWorkspaceChange(before, bridge.getState);
+}
+
+function scenarioSnapshot(state: SpatialWorkspace, scenarioId: string) {
+  const scenario = getScenario(state, scenarioId);
+  return {
+    scenario,
+    planning: planningMetrics(state.site, scenario.mass),
+  };
+}
+
+export function registerSpaceLabTools(bridge: SpaceLabWebMcpBridge) {
+  if (typeof document === "undefined" || typeof document.modelContext?.registerTool !== "function") {
+    return { supported: false, dispose: () => undefined };
+  }
 
   const controller = new AbortController();
-  const register = (tool: unknown) => {
+  const register = (tool: Parameters<NonNullable<Document["modelContext"]>["registerTool"]>[0]) => {
     void document.modelContext!.registerTool(tool, { signal: controller.signal }).catch(() => undefined);
   };
 
   register({
     name: "get_spatial_workspace",
-    title: "Read SpaceLab spatial workspace",
-    description: "Read the selected real-world site, scenario branches, active option, comparison option, footprints, and model parameters.",
+    title: "Read SpaceLab workspace",
+    description: "Read the selected site, design scenarios, active and comparison options, saved analysis points, and current planning geometry.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true },
-    execute: async () => bridge.getState(),
+    execute: async () => {
+      const state = bridge.getState();
+      return {
+        ...state,
+        analyses: state.scenarios.map((scenario) => ({
+          scenarioId: scenario.id,
+          planning: planningMetrics(state.site, scenario.mass),
+        })),
+      };
+    },
   });
 
   register({
     name: "search_location",
-    title: "Search a Korean location in VWorld",
-    description: "Search VWorld address data before selecting a real site. Returns coordinates only; selecting the parcel is a separate action.",
+    title: "Search a Korean location",
+    description: "Search Korean road or parcel addresses through the SpaceLab VWorld server route. This does not change the selected site.",
     inputSchema: {
       type: "object",
-      properties: { query: { type: "string", minLength: 2 } },
+      properties: {
+        query: { type: "string", minLength: 2, maxLength: 120 },
+      },
       required: ["query"],
       additionalProperties: false,
     },
@@ -82,34 +137,34 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
 
   register({
     name: "select_site",
-    title: "Select a real SpaceLab site",
-    description: "Resolve the VWorld cadastral parcel containing a coordinate and make it the canonical SpaceLab site. Selecting a new site clears old design scenarios.",
+    title: "Select a cadastral site",
+    description: "Resolve the cadastral parcel containing a Korean coordinate and make it the canonical SpaceLab site. If VWorld cadastral data is unavailable, SpaceLab returns a clearly marked manual-point fallback boundary instead. Selecting a new site clears the previous design scenarios.",
     inputSchema: {
       type: "object",
       properties: {
         lon: { type: "number", minimum: 124, maximum: 132 },
         lat: { type: "number", minimum: 33, maximum: 39.5 },
-        label: { type: "string" },
+        label: { type: "string", maxLength: 160 },
       },
       required: ["lon", "lat"],
       additionalProperties: false,
     },
     execute: async (input: { lon: number; lat: number; label?: string }) => {
       const site = await bridge.selectSiteAtPoint({ lon: input.lon, lat: input.lat }, input.label);
-      bridge.setSite(site, "agent");
-      return bridge.getState();
+      const state = await applyWorkspaceChange(bridge, () => bridge.actions.setSite(site, "agent"));
+      return { selectedSite: state.site, scenariosCleared: state.scenarios.length === 0 };
     },
   });
 
   register({
     name: "create_building_mass",
-    title: "Create a new SpaceLab building mass",
-    description: "Create the first or next early-stage massing scenario on the selected site. This is conceptual massing, not BIM.",
+    title: "Create a building mass scenario",
+    description: "Create a conceptual early-stage building mass on the current site. This changes the canonical workspace and is not detailed BIM.",
     inputSchema: {
       type: "object",
       properties: {
-        name: { type: "string" },
-        intent: { type: "string" },
+        name: { type: "string", maxLength: 120 },
+        intent: { type: "string", maxLength: 300 },
         heightM: { type: "number", minimum: 3, maximum: 120 },
         floors: { type: "number", minimum: 1, maximum: 40 },
         rotationDeg: { type: "number", minimum: -180, maximum: 180 },
@@ -125,52 +180,71 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       },
       additionalProperties: false,
     },
-    execute: async (input: any) => {
-      bridge.createBuildingMass(input, "agent");
-      return bridge.getState();
-    },
-  });
-
-  register({
-    name: "delete_scenario",
-    title: "Delete a SpaceLab scenario",
-    description: "Delete one conceptual scenario from the current site.",
-    inputSchema: {
-      type: "object",
-      properties: { scenarioId: { type: "string" } },
-      required: ["scenarioId"],
-      additionalProperties: false,
-    },
-    execute: async (input: { scenarioId: string }) => {
-      bridge.deleteScenario(input.scenarioId, "agent");
-      return bridge.getState();
+    execute: async (input: CreateMassInput) => {
+      const before = bridge.getState();
+      const state = await applyWorkspaceChange(bridge, () => bridge.actions.createBuildingMass(input, "agent"));
+      const created = state.scenarios.find((scenario) => !before.scenarios.some((prior) => prior.id === scenario.id));
+      return created ? scenarioSnapshot(state, created.id) : { workspace: state };
     },
   });
 
   register({
     name: "clone_scenario",
-    title: "Branch a SpaceLab scenario",
-    description: "Clone an existing design scenario to create a new alternative before editing it.",
+    title: "Clone a design scenario",
+    description: "Clone an existing scenario into a new editable alternative.",
     inputSchema: {
       type: "object",
-      properties: { sourceId: { type: "string" }, name: { type: "string" } },
+      properties: {
+        sourceId: { type: "string", minLength: 1, maxLength: 32 },
+        name: { type: "string", maxLength: 120 },
+      },
       required: ["sourceId"],
       additionalProperties: false,
     },
     execute: async (input: { sourceId: string; name?: string }) => {
-      bridge.cloneScenario(input.sourceId, input.name, "agent");
-      return bridge.getState();
+      const before = bridge.getState();
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.cloneScenario(input.sourceId, input.name, "agent"),
+      );
+      const created = state.scenarios.find((scenario) => !before.scenarios.some((prior) => prior.id === scenario.id));
+      return created ? scenarioSnapshot(state, created.id) : { workspace: state };
+    },
+  });
+
+  register({
+    name: "delete_scenario",
+    title: "Delete a design scenario",
+    description: "Delete one conceptual scenario from the current workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scenarioId: { type: "string", minLength: 1, maxLength: 32 },
+      },
+      required: ["scenarioId"],
+      additionalProperties: false,
+    },
+    execute: async (input: { scenarioId: string }) => {
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.deleteScenario(input.scenarioId, "agent"),
+      );
+      return {
+        deletedScenarioId: input.scenarioId,
+        remainingScenarioIds: state.scenarios.map((scenario) => scenario.id),
+        activeScenarioId: state.activeScenarioId,
+      };
     },
   });
 
   register({
     name: "edit_building_mass",
-    title: "Edit a SpaceLab building mass",
-    description: "Edit early-stage massing parameters. Dimensions are meters and rotation is degrees; this is not detailed BIM.",
+    title: "Edit a building mass",
+    description: "Edit conceptual building height, floors, rotation, position, or footprint in an existing scenario.",
     inputSchema: {
       type: "object",
       properties: {
-        scenarioId: { type: "string" },
+        scenarioId: { type: "string", minLength: 1, maxLength: 32 },
         heightM: { type: "number", minimum: 3, maximum: 120 },
         floors: { type: "number", minimum: 1, maximum: 40 },
         rotationDeg: { type: "number", minimum: -180, maximum: 180 },
@@ -187,33 +261,42 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       required: ["scenarioId"],
       additionalProperties: false,
     },
-    execute: async (input: any) => {
+    execute: async (input: MassPatch & { scenarioId: string }) => {
       const { scenarioId, ...patch } = input;
-      bridge.editBuildingMass(scenarioId, patch, "agent");
-      return bridge.getState();
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.editBuildingMass(scenarioId, patch, "agent"),
+      );
+      return scenarioSnapshot(state, scenarioId);
     },
   });
 
   register({
     name: "set_mass_footprint",
-    title: "Set a rectangular or free-polygon footprint",
-    description: "Replace one scenario's conceptual building footprint with a rectangle or local-coordinate polygon.",
+    title: "Set a building footprint",
+    description: "Replace one scenario's conceptual footprint with a rectangle or local-coordinate free polygon.",
     inputSchema: {
       type: "object",
-      properties: { scenarioId: { type: "string" }, footprint: footprintSchema },
+      properties: {
+        scenarioId: { type: "string", minLength: 1, maxLength: 32 },
+        footprint: footprintSchema,
+      },
       required: ["scenarioId", "footprint"],
       additionalProperties: false,
     },
-    execute: async (input: any) => {
-      bridge.setMassFootprint(input.scenarioId, input.footprint, "agent");
-      return bridge.getState();
+    execute: async (input: { scenarioId: string; footprint: Footprint }) => {
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.setMassFootprint(input.scenarioId, input.footprint, "agent"),
+      );
+      return scenarioSnapshot(state, input.scenarioId);
     },
   });
 
   register({
     name: "set_sun_study_point",
-    title: "Set SpaceLab direct-sun study point",
-    description: "Set the ground point used for deterministic direct-sun estimates against the planned mass.",
+    title: "Set the direct-sun study point",
+    description: "Set the ground coordinate used for deterministic planned-mass direct-sun analysis.",
     inputSchema: {
       type: "object",
       properties: {
@@ -224,15 +307,19 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       additionalProperties: false,
     },
     execute: async (input: { lon: number; lat: number }) => {
-      bridge.setSunStudyPoint({ lon: input.lon, lat: input.lat }, "agent");
-      return bridge.getState();
+      const point = { lon: input.lon, lat: input.lat };
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.setSunStudyPoint(point, "agent"),
+      );
+      return { sunStudyPoint: state.sunStudyPoint };
     },
   });
 
   register({
     name: "set_viewpoint",
-    title: "Set SpaceLab viewpoint",
-    description: "Save a repeatable observation point for comparing scenarios from the same place.",
+    title: "Set the View Impact observation point",
+    description: "Save a repeatable observation point and eye height for deterministic surrounding-building View Impact comparison.",
     inputSchema: {
       type: "object",
       properties: {
@@ -244,23 +331,82 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       additionalProperties: false,
     },
     execute: async (input: { lon: number; lat: number; eyeHeightM?: number }) => {
-      bridge.setViewpoint({
+      const viewpoint: Viewpoint = {
         point: { lon: input.lon, lat: input.lat },
         eyeHeightM: input.eyeHeightM ?? 1.7,
-      }, "agent");
-      return bridge.getState();
+      };
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.setViewpoint(viewpoint, "agent"),
+      );
+      return { viewpoint: state.viewpoint };
+    },
+  });
+
+  register({
+    name: "set_shadow_time",
+    title: "Set a scenario analysis time",
+    description: "Set the local date and time used by a scenario's geometric solar shadow preview.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        scenarioId: { type: "string", minLength: 1, maxLength: 32 },
+        localDateTime: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}$",
+          description: "Local site date and time in YYYY-MM-DDTHH:mm format.",
+        },
+      },
+      required: ["scenarioId", "localDateTime"],
+      additionalProperties: false,
+    },
+    execute: async (input: { scenarioId: string; localDateTime: string }) => {
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.setShadowTime(input.scenarioId, input.localDateTime, "agent"),
+      );
+      return scenarioSnapshot(state, input.scenarioId);
+    },
+  });
+
+  register({
+    name: "compare_scenarios",
+    title: "Compare two design scenarios",
+    description: "Select a primary scenario and an optional comparison scenario in the shared SpaceLab workspace.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        primaryId: { type: "string", minLength: 1, maxLength: 32 },
+        compareId: { type: "string", maxLength: 32 },
+      },
+      required: ["primaryId"],
+      additionalProperties: false,
+    },
+    execute: async (input: { primaryId: string; compareId?: string }) => {
+      const state = await applyWorkspaceChange(
+        bridge,
+        () => bridge.actions.compareScenarios(input.primaryId, input.compareId || undefined),
+      );
+      return {
+        activeScenarioId: state.activeScenarioId,
+        compareScenarioId: state.compareScenarioId,
+      };
     },
   });
 
   register({
     name: "run_direct_sun_study",
-    title: "Run SpaceLab direct-sun study",
-    description: "Estimate direct-sun duration from 09:00 to 18:00 at a ground point against one planned mass. This is a geometric pre-check, not a statutory sunlight-right determination.",
+    title: "Run planned-mass direct-sun analysis",
+    description: "Estimate direct-sun duration from 09:00 to 18:00 at a ground point against one planned mass. The result excludes surrounding buildings and is not a statutory sunlight-right determination.",
     inputSchema: {
       type: "object",
       properties: {
-        scenarioId: { type: "string" },
-        date: { type: "string", description: "YYYY-MM-DD" },
+        scenarioId: { type: "string", maxLength: 32 },
+        date: {
+          type: "string",
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+          description: "Local date in YYYY-MM-DD format.",
+        },
         lon: { type: "number", minimum: 124, maximum: 132 },
         lat: { type: "number", minimum: 33, maximum: 39.5 },
         stepMinutes: { type: "number", minimum: 5, maximum: 60 },
@@ -268,7 +414,13 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       additionalProperties: false,
     },
     annotations: { readOnlyHint: true },
-    execute: async (input: { scenarioId?: string; date?: string; lon?: number; lat?: number; stepMinutes?: number }) => {
+    execute: async (input: {
+      scenarioId?: string;
+      date?: string;
+      lon?: number;
+      lat?: number;
+      stepMinutes?: number;
+    }) => {
       const state = bridge.getState();
       const scenarioId = input.scenarioId ?? state.activeScenarioId;
       if (!scenarioId) throw new Error("No active SpaceLab scenario.");
@@ -276,7 +428,7 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       const point = input.lon !== undefined && input.lat !== undefined
         ? { lon: input.lon, lat: input.lat }
         : state.sunStudyPoint ?? state.site.center;
-      const study = directSunStudy(
+      const result = directSunStudy(
         scenario.mass,
         state.site,
         point,
@@ -284,39 +436,18 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
         state.timeZoneOffsetMinutes,
         { stepMinutes: input.stepMinutes },
       );
-      const context = await bridge.sampleSunContext(point, study.samples);
-      const blockedByContext = new Set(context.blockedTimes);
-      const contextAdjustedSunMinutes = context.supported
-        ? study.samples.reduce((minutes, sample) => sample.state === "sun" && !blockedByContext.has(sample.localDateTime)
-          ? minutes + study.stepMinutes
-          : minutes, 0)
-        : study.sunMinutes;
-      return {
-        scenarioId,
-        point: study.point,
-        date: study.date,
-        stepMinutes: study.stepMinutes,
-        plannedMassSunMinutes: study.sunMinutes,
-        contextAdjustedSunMinutes,
-        shadowMinutes: study.shadowMinutes,
-        daylightMinutes: study.daylightMinutes,
-        plannedMassScope: study.scope,
-        cityContextSupported: context.supported,
-        cityContextSource: context.source,
-        cityContextBlockedTimes: context.blockedTimes,
-        samples: study.samples,
-      };
+      return { scenarioId, ...result };
     },
   });
 
   register({
     name: "run_view_impact",
-    title: "Run SpaceLab viewpoint visibility analysis",
-    description: "Estimate how much of one planned mass is visible from the saved viewpoint against the loaded VWorld 3D city and terrain. This is a geometric comparison aid, not a legal view-right determination.",
+    title: "Run surrounding-building View Impact",
+    description: "Estimate how much of a planned mass is visible from the saved viewpoint using the loaded surrounding-building footprints and height attributes. Terrain, vegetation, windows, and legal view-right judgments are excluded.",
     inputSchema: {
       type: "object",
       properties: {
-        scenarioId: { type: "string" },
+        scenarioId: { type: "string", maxLength: 32 },
       },
       additionalProperties: false,
     },
@@ -327,47 +458,13 @@ export function registerSpaceLabTools(bridge: ToolBridge) {
       const scenarioId = input.scenarioId ?? state.activeScenarioId;
       if (!scenarioId) throw new Error("No active SpaceLab scenario.");
       const scenario = getScenario(state, scenarioId);
-      const result = await bridge.sampleViewImpact(state.viewpoint, state.site, scenario.mass);
-      return {
-        scenarioId,
-        viewpoint: state.viewpoint,
-        ...result,
-      };
-    },
-  });
-
-  register({
-    name: "set_shadow_time",
-    title: "Set SpaceLab shadow preview time",
-    description: "Set the local scenario date/time used for a geometric solar shadow preview, not a statutory sunlight-right determination.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        scenarioId: { type: "string" },
-        localDateTime: { type: "string", description: "YYYY-MM-DDTHH:mm" },
-      },
-      required: ["scenarioId", "localDateTime"],
-      additionalProperties: false,
-    },
-    execute: async (input: { scenarioId: string; localDateTime: string }) => {
-      bridge.setShadowTime(input.scenarioId, input.localDateTime, "agent");
-      return bridge.getState();
-    },
-  });
-
-  register({
-    name: "compare_scenarios",
-    title: "Compare two SpaceLab scenarios",
-    description: "Select a primary and comparison scenario in the shared SpaceLab workspace.",
-    inputSchema: {
-      type: "object",
-      properties: { primaryId: { type: "string" }, compareId: { type: "string" } },
-      required: ["primaryId", "compareId"],
-      additionalProperties: false,
-    },
-    execute: async (input: { primaryId: string; compareId: string }) => {
-      bridge.compareScenarios(input.primaryId, input.compareId);
-      return bridge.getState();
+      const result = viewImpact(
+        state.viewpoint,
+        state.site,
+        scenario.mass,
+        bridge.getBuildingContext(),
+      );
+      return { scenarioId, viewpoint: state.viewpoint, ...result };
     },
   });
 

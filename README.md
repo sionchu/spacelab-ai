@@ -1,76 +1,117 @@
 # SpaceLab AI
 
-**현실 공간 위에서 초기 건축 massing 대안을 만들고 비교하는 Spatial Decision Canvas.**
+**실제 공간정보 위에서 건물·시설의 배치 대안을 만들고 주변 영향을 비교하는 공간계획 서비스.**
 
-SpaceLab is a small browser-native V0 for non-specialists. It places conceptual building masses on a VWorld 3D context, keeps scenario branches in one canonical state, and exposes the same application actions to the human UI and WebMCP.
+SpaceLab is an early-stage spatial planning workstation. The application keeps site, building mass and scenario data in one canonical model while rendering the current plan over an interactive 3D web map.
 
-## V0 scope
+## Current stack
 
-- VWorld address search and real cadastral parcel selection (`LP_PA_CBND_BUBUN`)
-- Empty-site start with direct rectangle / free-polygon mass creation
-- Rectangular and free-polygon `BuildingMass` footprints
-- Height, floors, footprint, position, and rotation editing
-- Canvas parcel pick, polygon drawing, and click-to-move mass placement
-- Scenario clone/branch with parent relationships
-- A/B comparison with GFA, height, solar-geometry shadow deltas, and direct-sun duration
-- Geolocation/date/time solar position and ground shadow polygon preview
-- Selectable ground-point Direct Sun Hours pre-check with planned-mass shadow plus VWorld 3D scene/terrain occlusion when supported
-- Repeatable VWorld viewpoint for scenario viewing
-- Planned site coverage/FAR metrics from parcel area and current mass
-- VWorld WebGL adapter with a no-key fallback geometry canvas
-- WebMCP tools that call the same application action surface as the UI
+- Next.js 16 + TypeScript
+- MapLibre GL JS
+- shadcn-compatible UI primitives
+- SunCalc v2
+- Turf.js + GeoJSON
+- raster DEM terrain
+- VWorld Search/Data APIs behind Next.js Route Handlers
+- Vercel-compatible application structure
 
-This is early-stage massing exploration. It is not a legal sunlight-right determination, building-permit advice, full CAD/BIM system, structural analysis, or a replacement for licensed professional review.
+## Current V0 capabilities
+
+- Korean address search and cadastral parcel selection
+- selected parcel rendered as GeoJSON
+- building mass presets and editable height/floors/rotation/position
+- active and compare scenarios
+- MapLibre fill-extrusion 3D planned buildings
+- DEM-backed terrain and hillshade
+- 09:00–18:00 time slider
+- SunCalc solar azimuth/altitude driving MapLibre light and terrain illumination
+- deterministic SpaceLab ground-shadow polygon
+- VWorld/OSM surrounding-building GeoJSON with normalized height extrusion
+- saved viewpoint and deterministic surrounding-building View Impact comparison
+- presentation-only Concept View from the current MapLibre snapshot and active mass
+- responsive desktop/mobile planning UI
 
 ## Architecture
 
 ```text
-Human UI ───────┐
-                ├─ application actions → canonical SpatialWorkspace
-WebMCP adapter ─┘             │
-                              ├─ Site (real parcel + boundary)
-                              ├─ BuildingMass
-                              ├─ Scenario branches
-                              └─ analysis selectors
-                                    ↓
-                         VWorld / fallback rendering adapter
+Next.js UI
+   │
+   ├─ application actions → canonical SpatialWorkspace
+   │                         ├─ Site
+   │                         ├─ BuildingMass
+   │                         └─ Scenario
+   │
+   ├─ MapLibre adapter
+   │    ├─ GeoJSON parcel
+   │    ├─ fill-extrusion masses
+   │    ├─ DEM terrain
+   │    ├─ SunCalc light
+   │    └─ surrounding-building GeoJSON
+   │
+   └─ Next.js Route Handlers
+        ├─ VWorld address / cadastral / building APIs
+        └─ server-only Concept View image generation
 ```
 
-`src/types.ts` defines the canonical `BuildingMass`, `Scenario`, and workspace types. `src/model.ts` contains pure state transitions and analysis helpers. `src/actions.ts` is the shared application action surface. `src/vworld.ts` is a rendering adapter; it does not own scenario state. `src/webmcp.ts` registers tools against the same actions used by React event handlers.
+MapLibre is a renderer, not the state owner. `src/types.ts`, `src/model.ts`, `src/actions.ts`, and `src/analysis.ts` remain the canonical domain/analysis layer.
 
 ## Local setup
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-The Vite config reads `VITE_VWORLD_API_KEY` from the process/hosted environment first, then supports the local `C:\Users\<you>\.codex\.env` variables `VITE_VWORLD_API_KEY` or `VWORLD_API_KEY`. `VITE_VWORLD_DOMAIN` controls the VWorld service-domain parameter and should match the deployed Site host. The key is only injected into the browser bundle for the VWorld adapter; it is never stored in this repository. Without a key, the fallback geometry remains fully interactive.
+Set server-only VWorld configuration:
 
-For a local project `.env`, copy `.env.example` to `.env` and set `VITE_VWORLD_API_KEY`. `.env` files are ignored by Git.
+```bash
+VWORLD_API_KEY=...
+VWORLD_DOMAIN=localhost
+```
 
-## WebMCP tools
+Do not expose the VWorld key through `NEXT_PUBLIC_*`.
+
+Concept View is optional and requires a server-only OpenAI key:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_IMAGE_MODEL=gpt-image-2.5-sunburst
+OPENAI_IMAGE_SIZE=1536x1024
+OPENAI_IMAGE_QUALITY=medium
+```
+
+The generated image is presentation-only and never mutates the canonical site, scenario, mass, sunlight, or View Impact geometry.
+
+## Site Tools / WebMCP
+
+SpaceLab registers top-level WebMCP tools when `document.modelContext.registerTool` is available. The tools reuse the same canonical application actions and analysis functions as the human UI.
 
 - `get_spatial_workspace`
 - `search_location`
 - `select_site`
 - `create_building_mass`
-- `delete_scenario`
 - `clone_scenario`
+- `delete_scenario`
 - `edit_building_mass`
 - `set_mass_footprint`
-- `set_shadow_time`
 - `set_sun_study_point`
 - `set_viewpoint`
-- `run_direct_sun_study`
+- `set_shadow_time`
 - `compare_scenarios`
+- `run_direct_sun_study`
+- `run_view_impact`
 
-WebMCP is optional. The site remains usable without a Site Tools-capable host.
+Concept View generation is intentionally not exposed as a WebMCP tool because it is a user-triggered, potentially billable presentation operation.
 
-## Sites deployment
+## Deployment
 
-See [`SITES_DEPLOY.md`](./SITES_DEPLOY.md). Configure `VITE_VWORLD_API_KEY` as a hosted build environment variable, deploy the Vite app, then allowlist the final public Site origin in the VWorld console.
+The project is structured for Vercel/Next.js deployment. Configure the same server-side environment variables in the deployment environment.
+
+## Boundaries
+
+SpaceLab is for early spatial planning and alternative comparison. It is not a legal zoning, sunlight-right, or view-right determination, permit engine, CAD/BIM replacement, structural analysis tool, or substitute for licensed professional review. Concept View images are illustrative, not analysis evidence.
 
 ## License
 
-MIT for repository-authored source. VWorld, Cesium, and any provider data remain subject to their own terms.
+MIT for repository-authored source. Map data and provider data remain subject to their own licenses and terms.

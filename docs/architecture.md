@@ -2,47 +2,79 @@
 
 ## Canonical state
 
-`Site`, `BuildingMass`, and `Scenario` are the domain objects. `Site` owns the selected real-world parcel center, VWorld cadastral boundary, optional PNU/address provenance, and is the georeference for all local mass geometry. Selecting a new site clears the previous scenario graph rather than silently reusing geometry on another parcel.
+`Site`, `BuildingMass`, `Scenario`, and `SpatialWorkspace` remain the domain SSOT.
 
-`BuildingMass` and `Scenario` remain the design objects. A `BuildingMass` contains a local-coordinate footprint, height, floors, position offset, rotation, and site center. A `Scenario` owns one mass plus its branch parent, intent, provenance, and analysis date/time. `SpatialWorkspace` holds the scenario collection and active/compare selections.
+- `Site` owns the selected real-world parcel center, cadastral boundary, optional PNU/address provenance.
+- `BuildingMass` owns conceptual footprint, height, floors, position offset and rotation.
+- `Scenario` owns one mass plus branch/provenance and analysis time.
+- `src/model.ts` owns pure reducer transitions and deterministic geometry helpers.
+- `src/actions.ts` is the application action surface.
 
-The reducer in `src/model.ts` is pure and owns state transitions. It normalizes numeric ranges and deep-clones footprints when branching so a branch cannot mutate its parent by reference.
+Rendering libraries never own canonical design state.
 
-## Shared application actions
+## Next.js application boundary
 
-`src/actions.ts` exposes `selectScenario`, `compareScenarios`, `cloneScenario`, `editBuildingMass`, `setMassFootprint`, and `setShadowTime`. React handlers and WebMCP tool executions call these same functions. This keeps human edits and agent edits on one state path.
+The app shell is Next.js 16 App Router.
 
-## Adapters
+- `app/page.tsx` hosts the workspace.
+- `components/workspace/workspace-client.tsx` binds UI events to canonical actions.
+- `app/api/vworld/*` are server Route Handlers.
+- VWorld credentials remain server-side.
 
-- `src/vworld.ts` converts canonical local footprint points into geographic coordinates and renders Cesium/VWorld entities. It is optional and is never the source of scenario state.
-- The fallback canvas is a UI rendering adapter for local development without an API key.
-- `src/webmcp.ts` registers tools only when `document.modelContext` exists. It reports the same workspace and dispatches the same application actions.
+This replaces the previous Vite + browser-side VWorld WebGL shell.
 
-## Deliberate V0 boundary
+## MapLibre rendering adapter
 
-The shadow helper is a qualitative deterministic preview for comparing alternatives. It does not model legal criteria, neighboring parcel rights, detailed terrain, structural systems, or BIM semantics.
+`components/map/spatial-map.tsx` consumes canonical state and produces render-only GeoJSON.
 
+Current layers:
 
-## Real-site adapter
+1. temporary OSM raster basemap
+2. Mapzen Terrarium raster-dem terrain
+3. DEM hillshade
+4. selected parcel fill + line
+5. deterministic ground-shadow polygons
+6. planned active/compare buildings using `fill-extrusion`
 
-`src/vworld-api.ts` keeps external data outside canonical state transitions:
+The renderer accepts map interaction events and converts selected geographic points back into canonical application actions. It does not persist independent building/site state.
 
-1. VWorld Search API resolves a Korean address to EPSG:4326 coordinates.
-2. VWorld Data API queries `LP_PA_CBND_BUBUN` with a point geometry filter.
-3. The resulting parcel polygon is normalized into canonical `Site`.
-4. UI and WebMCP both call `setSite`; neither mutates renderer state directly.
+## Solar visualization
 
-The VWorld/Cesium canvas also exposes point picking for parcel selection, free-polygon drawing, and click-to-move mass placement. These interactions convert geographic clicks into the site's local meter coordinates before dispatching canonical application actions.
+SunCalc v2 supplies:
 
+- azimuth in degrees clockwise from north
+- apparent solar altitude in degrees
 
-## Analysis Pack v1
+The 09:00–18:00 slider updates:
 
-`src/analysis.ts` is a deterministic analysis layer over canonical `Site` and `BuildingMass` data.
+- MapLibre global light
+- DEM hillshade illumination
+- the deterministic SpaceLab building-shadow polygon
 
-- `planningMetrics` derives parcel area, footprint, estimated GFA, planned coverage, and planned FAR. These are plan metrics, not legal allowances.
-- `directSunStudy` is the deterministic planned-mass layer: it samples solar geometry from 09:00–18:00 and checks whether a selected ground point falls inside the current planned mass shadow.
-- `sampleSceneSunContext` in the VWorld adapter samples the loaded Cesium/VWorld 3D scene along each sun vector with `sampleHeightMostDetailed`. Existing 3D Tiles and terrain can therefore block direct sun. SpaceLab-owned mass/shadow/site entities are excluded from scene sampling so the deterministic planned-mass layer is not double-counted.
-- `sunStudyPoint` and `viewpoint` are canonical workspace state so Human UI and WebMCP operate on the same analysis targets.
-- VWorld/Cesium remains an adapter: it renders analysis markers and moves the camera to a saved viewpoint, but does not own analysis state.
+The ground-shadow analysis remains a SpaceLab geometry result rather than relying on a visual-only renderer shadow.
 
-This phase intentionally does not implement zoning/legal compliance or statutory sunlight-right determination. City-context direct-sun results are runtime geometric estimates that depend on the VWorld 3D scene and available scene-height sampling.
+## GeoJSON and Turf
+
+Canonical geometry is converted at the adapter boundary.
+
+- parcel boundary → GeoJSON Polygon
+- building footprint → GeoJSON Polygon with height properties
+- analysis shadow → GeoJSON Polygon
+- Turf.js handles bounds and feature collections used by the renderer
+
+## Korea data boundary
+
+VWorld remains a spatial data provider rather than the map engine.
+
+- `GET /api/vworld/search` resolves addresses
+- `POST /api/vworld/parcel` resolves `LP_PA_CBND_BUBUN` cadastral polygons
+- browser clients never receive the VWorld API key
+
+The next milestone adds surrounding Korean building footprints/attributes as GeoJSON/vector tiles and extrudes them in MapLibre.
+
+## Deliberate boundaries
+
+- planning metrics are not legal maxima
+- direct-sun/shadow results are geometric planning aids
+- Concept View is presentation-only when reintroduced on the Next.js renderer
+- no CAD/BIM or permit/legal compliance claims
