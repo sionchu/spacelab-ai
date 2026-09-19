@@ -1,76 +1,109 @@
-# SpaceLab AI
+# SpaceLab
 
-**현실 공간 위에서 초기 건축 massing 대안을 만들고 비교하는 Spatial Decision Canvas.**
+**실제 공간정보 위에서 건물·시설의 배치 대안을 만들고 주변 영향을 비교하는 공간계획 서비스.**
 
-SpaceLab is a small browser-native V0 for non-specialists. It places conceptual building masses on a VWorld 3D context, keeps scenario branches in one canonical state, and exposes the same application actions to the human UI and WebMCP.
+## Current RE0 stack
 
-## V0 scope
+- Next.js + TypeScript
+- shadcn/ui primitives
+- MapLibre GL JS
+- SunCalc
+- Turf.js
+- GeoJSON
+- raster DEM terrain
+- VWorld address + cadastral parcel API
+- Vercel-ready Next.js route handlers
 
-- VWorld address search and real cadastral parcel selection (`LP_PA_CBND_BUBUN`)
-- Empty-site start with direct rectangle / free-polygon mass creation
-- Rectangular and free-polygon `BuildingMass` footprints
-- Height, floors, footprint, position, and rotation editing
-- Canvas parcel pick, polygon drawing, and click-to-move mass placement
-- Scenario clone/branch with parent relationships
-- A/B comparison with GFA, height, solar-geometry shadow deltas, and direct-sun duration
-- Geolocation/date/time solar position and ground shadow polygon preview
-- Selectable ground-point Direct Sun Hours pre-check with planned-mass shadow plus VWorld 3D scene/terrain occlusion when supported
-- Repeatable VWorld viewpoint for scenario viewing
-- Planned site coverage/FAR metrics from parcel area and current mass
-- VWorld WebGL adapter with a no-key fallback geometry canvas
-- WebMCP tools that call the same application action surface as the UI
+## First vertical slice
 
-This is early-stage massing exploration. It is not a legal sunlight-right determination, building-permit advice, full CAD/BIM system, structural analysis, or a replacement for licensed professional review.
+The current RE0 branch intentionally proves one complete map-first workflow before restoring every V0 feature:
+
+1. Search a Korean address with VWorld.
+2. Resolve the real cadastral parcel.
+3. Render the parcel as GeoJSON.
+4. Render 3D terrain from raster DEM.
+5. Load nearby building footprints as GeoJSON context and extrude them.
+6. Place a canonical SpaceLab `BuildingMass` preset on the parcel.
+7. Move the planned mass by clicking the map.
+8. Scrub 09:00–18:00 and update:
+   - SunCalc solar azimuth / altitude
+   - MapLibre global light
+   - DEM hillshade direction / altitude
+   - SpaceLab planned-mass shadow polygon
+   - direct-sun duration
+
+The canonical domain remains in `src/types.ts`, `src/model.ts`, `src/actions.ts`, and `src/analysis.ts`.
 
 ## Architecture
 
 ```text
-Human UI ───────┐
-                ├─ application actions → canonical SpatialWorkspace
-WebMCP adapter ─┘             │
-                              ├─ Site (real parcel + boundary)
-                              ├─ BuildingMass
-                              ├─ Scenario branches
-                              └─ analysis selectors
-                                    ↓
-                         VWorld / fallback rendering adapter
+Next.js UI
+   │
+   ├─ shadcn/ui controls
+   ├─ canonical SpatialWorkspace / actions
+   └─ MapLibre adapter
+         ├─ OSM raster basemap
+         ├─ raster DEM terrain
+         ├─ nearby building GeoJSON
+         ├─ selected parcel GeoJSON
+         ├─ planned BuildingMass GeoJSON
+         └─ shadow GeoJSON
+
+Next.js route handlers
+   ├─ VWorld address search
+   ├─ VWorld cadastral parcel
+   └─ nearby building context
 ```
 
-`src/types.ts` defines the canonical `BuildingMass`, `Scenario`, and workspace types. `src/model.ts` contains pure state transitions and analysis helpers. `src/actions.ts` is the shared application action surface. `src/vworld.ts` is a rendering adapter; it does not own scenario state. `src/webmcp.ts` registers tools against the same actions used by React event handlers.
+MapLibre owns rendering and camera interaction only. It does not own scenario state.
+
+## Data boundaries
+
+- **VWorld**: Korean address search + cadastral parcel.
+- **DEM**: defaults to MapLibre demo terrain and is replaceable with `NEXT_PUBLIC_DEM_TILEJSON`.
+- **Nearby buildings**: first RE0 slice uses OpenStreetMap building footprints via a server route. This is explicitly temporary context, not the final Korean building source.
+- **Planned geometry**: canonical SpaceLab state converted to GeoJSON.
+- **Solar state**: SunCalc is the single solar-position source used by lighting and shadow analysis.
+
+The next data adapter replaces the temporary OSM building context with VWorld / Ministry of Land GIS building integrated information without changing the MapLibre layers.
 
 ## Local setup
 
 ```bash
 npm install
+cp .env.example .env.local
 npm run dev
 ```
 
-The Vite config reads `VITE_VWORLD_API_KEY` from the process/hosted environment first, then supports the local `C:\Users\<you>\.codex\.env` variables `VITE_VWORLD_API_KEY` or `VWORLD_API_KEY`. `VITE_VWORLD_DOMAIN` controls the VWorld service-domain parameter and should match the deployed Site host. The key is only injected into the browser bundle for the VWorld adapter; it is never stored in this repository. Without a key, the fallback geometry remains fully interactive.
+Required:
 
-For a local project `.env`, copy `.env.example` to `.env` and set `VITE_VWORLD_API_KEY`. `.env` files are ignored by Git.
+```bash
+VWORLD_API_KEY=...
+```
 
-## WebMCP tools
+Optional:
 
-- `get_spatial_workspace`
-- `search_location`
-- `select_site`
-- `create_building_mass`
-- `delete_scenario`
-- `clone_scenario`
-- `edit_building_mass`
-- `set_mass_footprint`
-- `set_shadow_time`
-- `set_sun_study_point`
-- `set_viewpoint`
-- `run_direct_sun_study`
-- `compare_scenarios`
+```bash
+VWORLD_DOMAIN=localhost
+NEXT_PUBLIC_DEM_TILEJSON=https://demotiles.maplibre.org/terrain-tiles/tiles.json
+NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M=350
+```
 
-WebMCP is optional. The site remains usable without a Site Tools-capable host.
+Never commit `.env.local` or API keys.
 
-## Sites deployment
+## Verification
 
-See [`SITES_DEPLOY.md`](./SITES_DEPLOY.md). Configure `VITE_VWORLD_API_KEY` as a hosted build environment variable, deploy the Vite app, then allowlist the final public Site origin in the VWorld console.
+```bash
+npm install --no-audit --no-fund
+npm run typecheck
+npm run build
+git diff --check
+```
+
+## Product boundary
+
+SpaceLab is an early planning and scenario-comparison tool. It is not permit advice, a statutory sunlight-right determination, detailed CAD/BIM, structural analysis, or a replacement for licensed professional review.
 
 ## License
 
-MIT for repository-authored source. VWorld, Cesium, and any provider data remain subject to their own terms.
+MIT for repository-authored source. MapLibre, OpenStreetMap, VWorld, DEM providers, and public spatial datasets remain subject to their own terms and attribution requirements.
