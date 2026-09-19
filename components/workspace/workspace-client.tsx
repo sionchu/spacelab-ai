@@ -3,6 +3,8 @@
 import { FormEvent, useEffect, useMemo, useReducer, useState } from "react";
 import { Building2, Eye, Layers3, MapPin, Move, Search, SunMedium } from "lucide-react";
 import { SpatialMap } from "@/components/map/spatial-map";
+import type { SpatialMapApi } from "@/components/map/spatial-map";
+import { ConceptViewPanel } from "@/components/workspace/concept-view-panel";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { createApplicationActions } from "@/src/actions";
@@ -51,6 +53,8 @@ export function WorkspaceClient() {
   const [panel, setPanel] = useState<"site" | "building" | "analysis" | "scenario">("site");
   const [contextBuildings, setContextBuildings] = useState<BuildingContextCollection>(emptyContextBuildings);
   const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
+  const [mapApi, setMapApi] = useState<SpatialMapApi | null>(null);
+  const [conceptViewOpen, setConceptViewOpen] = useState(false);
 
   const actions = useMemo(
     () => createApplicationActions(dispatch, () => state),
@@ -194,6 +198,7 @@ export function WorkspaceClient() {
           onPickSite={(point) => void selectParcel(point)}
           onMoveMass={moveActive}
           onSetViewpoint={setViewpoint}
+          onMapApi={setMapApi}
         />
 
         <aside className="absolute left-3 top-[76px] z-10 hidden w-[310px] overflow-hidden rounded-2xl border border-white/9 bg-[#121b23]/96 shadow-2xl md:block">
@@ -222,6 +227,7 @@ export function WorkspaceClient() {
               onClearViewpoint={() => actions.setViewpoint(undefined, "human")}
               onSelectScenario={(scenarioId) => actions.selectScenario(scenarioId)}
               onCompareScenario={(scenarioId) => active && actions.compareScenarios(active.id, scenarioId || undefined)}
+              onOpenConcept={() => active && setConceptViewOpen(true)}
             />
           </div>
         </aside>
@@ -284,8 +290,22 @@ export function WorkspaceClient() {
             onClearViewpoint={() => actions.setViewpoint(undefined, "human")}
             onSelectScenario={(scenarioId) => actions.selectScenario(scenarioId)}
             onCompareScenario={(scenarioId) => active && actions.compareScenarios(active.id, scenarioId || undefined)}
+            onOpenConcept={() => active && setConceptViewOpen(true)}
           />
         </section>
+
+        {conceptViewOpen && active && (
+          <ConceptViewPanel
+            site={state.site}
+            scenario={active}
+            viewpoint={state.viewpoint}
+            captureMap={async () => ({
+              image: await mapApi?.captureSnapshot(),
+              camera: mapApi?.getCameraState(),
+            })}
+            onClose={() => setConceptViewOpen(false)}
+          />
+        )}
       </section>
     </main>
   );
@@ -311,6 +331,7 @@ function PanelContent({
   onClearViewpoint,
   onSelectScenario,
   onCompareScenario,
+  onOpenConcept,
 }: {
   panel: "site" | "building" | "analysis" | "scenario";
   active: ReturnType<typeof getScenario> | undefined;
@@ -331,6 +352,7 @@ function PanelContent({
   onClearViewpoint: () => void;
   onSelectScenario: (scenarioId: string) => void;
   onCompareScenario: (scenarioId: string) => void;
+  onOpenConcept: () => void;
 }) {
   if (panel === "site") {
     return (
@@ -473,6 +495,10 @@ function PanelContent({
         <div className="text-[9px] leading-4 text-[#71808c]">
           조망 가시율은 주변 건물 footprint·높이 기반의 초기 기하학적 추정입니다. 지형, 창호, 수목, 법적 조망권 판단은 포함하지 않습니다.
         </div>
+
+        <Button disabled={!active} onClick={onOpenConcept}>
+          컨셉 보기
+        </Button>
       </div>
     );
   }
