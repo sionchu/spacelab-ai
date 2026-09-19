@@ -319,6 +319,28 @@ function applyMassPatch(mass: BuildingMass, patch: MassPatch) {
   };
 }
 
+function normalizeAnalysisTime(value: string | undefined, fallback = "2026-09-18T15:00") {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value ?? "");
+  if (!match) return fallback;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return fallback;
+  }
+
+  const totalMinutes = clamp(Number(match[4]) * 60 + Number(match[5]), 9 * 60, 18 * 60);
+  const hours = String(Math.floor(totalMinutes / 60)).padStart(2, "0");
+  const minutes = String(totalMinutes % 60).padStart(2, "0");
+  return `${match[1]}-${match[2]}-${match[3]}T${hours}:${minutes}`;
+}
+
 function nextScenarioId(scenarios: Scenario[]) {
   const ids = new Set(scenarios.map((scenario) => scenario.id));
   for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
@@ -347,7 +369,7 @@ function createScenario(scenarios: Scenario[], input: CreateMassInput = {}, crea
       },
       rotationDeg: clamp(Number(input.rotationDeg) || 0, -180, 180),
     },
-    analysisTime: "2026-09-18T15:00",
+    analysisTime: normalizeAnalysisTime(input.analysisTime),
   };
 }
 
@@ -395,7 +417,7 @@ export function reducer(state: SpatialWorkspace, action: WorkspaceAction): Spati
       return {
         ...state,
         scenarios: state.scenarios.map((scenario) => scenario.id === action.scenarioId
-          ? { ...scenario, analysisTime: action.value }
+          ? { ...scenario, analysisTime: normalizeAnalysisTime(action.value, scenario.analysisTime) }
           : scenario),
       };
     case "EDIT_BUILDING_MASS":
