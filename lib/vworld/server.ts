@@ -203,7 +203,21 @@ function averageCenter(boundary: GeoPoint[], fallback: GeoPoint) {
 }
 
 function manualSite(pointValue: GeoPoint, label?: string): Site {
-  return manualSite(pointValue, label);
+  const deltaLon = 18 / (111_320 * Math.cos((pointValue.lat * Math.PI) / 180));
+  const deltaLat = 18 / 111_320;
+  return {
+    id: "point-" + pointValue.lon.toFixed(7) + "-" + pointValue.lat.toFixed(7),
+    name: label || "선택 위치",
+    address: label,
+    center: pointValue,
+    boundary: [
+      { lon: pointValue.lon - deltaLon, lat: pointValue.lat - deltaLat },
+      { lon: pointValue.lon + deltaLon, lat: pointValue.lat - deltaLat },
+      { lon: pointValue.lon + deltaLon, lat: pointValue.lat + deltaLat },
+      { lon: pointValue.lon - deltaLon, lat: pointValue.lat + deltaLat },
+    ],
+    source: "manual-point",
+  };
 }
 
 export async function parcelAtPoint(pointValue: GeoPoint, label?: string): Promise<Site> {
@@ -251,19 +265,5 @@ export async function parcelAtPoint(pointValue: GeoPoint, label?: string): Promi
     };
   }
 
-  const deltaLon = 18 / (111_320 * Math.cos((pointValue.lat * Math.PI) / 180));
-  const deltaLat = 18 / 111_320;
-  return {
-    id: "point-" + pointValue.lon.toFixed(7) + "-" + pointValue.lat.toFixed(7),
-    name: label || "선택 위치",
-    address: label,
-    center: pointValue,
-    boundary: [
-      { lon: pointValue.lon - deltaLon, lat: pointValue.lat - deltaLat },
-      { lon: pointValue.lon + deltaLon, lat: pointValue.lat - deltaLat },
-      { lon: pointValue.lon + deltaLon, lat: pointValue.lat + deltaLat },
-      { lon: pointValue.lon - deltaLon, lat: pointValue.lat + deltaLat },
-    ],
-    source: "manual-point",
-  };
+  return manualSite(pointValue, label);
 }
