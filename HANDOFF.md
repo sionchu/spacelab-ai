@@ -90,6 +90,23 @@ This workflow owns:
 
 Railway note: the staged SpaceLab source was corrected to the accepted runtime commit `78b4237a31e3e32235ba1b08fd0c91ec97794c56`. A separate staged deletion for the legacy `vworld-diagnostic` service remains because Railway does not expose an individual unstage action through the available API. It does not affect the current SpaceLab runtime unless the environment patch is explicitly applied.
 
-## Next concrete action
+## Merge readiness
 
-Re-run the UI portion of `docs/codex-aside-browser-acceptance.md` against production after the deployed `manualSite()` recursion fix (`4208dbc`). Pass 1 is recorded in `docs/codex-aside-browser-acceptance-pass1-2026-09-19.md`. If `document.modelContext` remains undefined in Codex Aside Browser, record WebMCP as `BLOCKED_BY_HOST` rather than changing application architecture. Keep PR #15 draft until the UI rerun is reviewed.
+Codex Aside Browser pass 2 is recorded in `docs/codex-aside-browser-acceptance-pass2-2026-09-19.md`.
+
+Application acceptance is PASS:
+
+- production site selection fixed
+- manual-point provenance is explicit
+- surrounding-building context loads
+- mass create/edit works
+- A/B scenario comparison works
+- viewpoint / View Impact works
+- Concept View entry exists without invoking image generation
+
+Host-only limitations are not application blockers:
+
+- Aside Browser cannot switch responsive viewport;
+- Aside Browser does not expose `document.modelContext`, so WebMCP is `BLOCKED_BY_HOST`.
+
+PR #15 may proceed to final merge review. Do not merge automatically; wait for explicit merge instruction.
