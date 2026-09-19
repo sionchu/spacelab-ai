@@ -191,27 +191,45 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             <Bot className="size-3.5" /> PlaySafe Tools
           </div>
         )}
-        <div className="rounded-lg border border-white/8 bg-[#151f28] px-2.5 py-1.5 text-[10px] text-[#a8b3bd]">
+        <div className="max-w-[240px] truncate rounded-lg bg-white/[0.045] px-2.5 py-1.5 text-[10px] text-[#a8b3bd]">
           {centerLabel}
         </div>
       </header>
 
       <section className="relative min-h-0 overflow-hidden">
-        {snapshot && renderer === "vworld" && vworldEnabled && (
-          <PlaySafeVWorldMap
-            snapshot={snapshot}
-            selectedPlaceId={selectedPlaceId}
-            onSelectPlace={setSelectedPlaceId}
-            onUnavailable={handleVWorldUnavailable}
-          />
+        {snapshot && vworldEnabled && (
+          <div
+            className={"absolute inset-0 transition-opacity duration-200 " + (
+              renderer === "vworld"
+                ? "z-[2] opacity-100"
+                : "pointer-events-none z-0 opacity-0"
+            )}
+            aria-hidden={renderer !== "vworld"}
+          >
+            <PlaySafeVWorldMap
+              snapshot={snapshot}
+              selectedPlaceId={selectedPlaceId}
+              onSelectPlace={setSelectedPlaceId}
+              onUnavailable={handleVWorldUnavailable}
+            />
+          </div>
         )}
 
-        {snapshot && (renderer === "analysis" || !vworldEnabled) && (
-          <PlaySafeMap
-            snapshot={snapshot}
-            selectedPlaceId={selectedPlaceId}
-            onSelectPlace={setSelectedPlaceId}
-          />
+        {snapshot && (
+          <div
+            className={"absolute inset-0 transition-opacity duration-200 " + (
+              renderer === "analysis" || !vworldEnabled
+                ? "z-[2] opacity-100"
+                : "pointer-events-none z-0 opacity-0"
+            )}
+            aria-hidden={renderer !== "analysis" && vworldEnabled}
+          >
+            <PlaySafeMap
+              snapshot={snapshot}
+              selectedPlaceId={selectedPlaceId}
+              onSelectPlace={setSelectedPlaceId}
+            />
+          </div>
         )}
 
         {!snapshot && (
@@ -220,9 +238,9 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <aside className="absolute bottom-3 left-3 top-3 z-20 flex w-[380px] flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#101820]/96 shadow-2xl backdrop-blur-md max-md:bottom-[76px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[52dvh] max-md:w-auto">
-          <div className="px-4 pb-3 pt-4">
-            <form onSubmit={search} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-xl border border-white/10 bg-[#0b1218]">
+        <aside className="absolute left-3 top-3 z-20 max-h-[calc(100%-104px)] w-[360px] overflow-y-auto rounded-[26px] border border-white/10 bg-[#0d161d]/94 shadow-[0_18px_60px_rgba(0,0,0,.36)] backdrop-blur-xl max-md:bottom-[76px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[52dvh] max-md:w-auto">
+          <div className="p-4">
+            <form onSubmit={search} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-2xl bg-black/20 shadow-inner">
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -249,44 +267,42 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               </div>
             )}
 
-            <div className="mt-3 grid grid-cols-[auto_1fr] gap-3 rounded-2xl bg-white/[0.035] p-3.5">
-              <div className="grid size-14 place-items-center rounded-2xl bg-[#102520] text-3xl shadow-inner ring-1 ring-[#53d6c7]/15">🧒</div>
-              <div className="min-w-0">
-                <div className="text-[10px] font-bold text-[#53d6c7]">아이 프로필</div>
-                <div className="mt-1 flex items-center gap-2">
+            <div className="mt-3 rounded-2xl bg-white/[0.03] px-3 py-3">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#102520] text-2xl ring-1 ring-[#53d6c7]/15">🧒</div>
+                <div className="min-w-0">
+                  <div className="text-[9px] font-bold text-[#6f817d]">아이</div>
                   <select
                     value={childAge}
                     onChange={(event) => setChildAge(Number(event.target.value))}
-                    className="rounded-lg bg-[#0d151b] px-2.5 py-1.5 text-xs outline-none ring-1 ring-white/8"
+                    className="mt-0.5 bg-transparent pr-6 text-[13px] font-extrabold text-white outline-none"
                   >
                     {Array.from({ length: 9 }, (_, index) => index + 3).map((age) => (
                       <option key={age} value={age}>{age}세</option>
                     ))}
                   </select>
-                  <span className="text-[9px] leading-4 text-[#8795a0]">체온 예측이 아닌 환경 노출 비교에 사용합니다.</span>
                 </div>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <div className="mb-1.5 text-[10px] font-bold text-[#9aa7b2]">예상 야외활동 시간</div>
-              <div className="grid grid-cols-3 gap-1.5">
-                {[20, 40, 60].map((value) => (
-                  <button
-                    key={value}
-                    onClick={() => setDuration(value)}
-                    className={"rounded-xl px-2 py-2.5 text-[11px] font-bold transition " + (duration === value
-                      ? "bg-[#15302b] text-[#71dfd2] ring-1 ring-[#53d6c7]/35"
-                      : "bg-white/[0.025] text-[#8795a0] hover:bg-white/[0.05]")}
-                  >
-                    {value}분
-                  </button>
-                ))}
+                <div className="ml-auto">
+                  <div className="mb-1 text-right text-[9px] font-bold text-[#6f817d]">야외활동 시간</div>
+                  <div className="flex rounded-xl bg-black/15 p-0.5">
+                    {[20, 40, 60].map((value) => (
+                      <button
+                        key={value}
+                        onClick={() => setDuration(value)}
+                        className={"rounded-[10px] px-3 py-1.5 text-[10px] font-extrabold transition " + (duration === value
+                          ? "bg-[#15302b] text-[#71dfd2]"
+                          : "text-[#7e8d97] hover:text-white")}
+                      >
+                        {value}분
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+          <div className="px-4 pb-4">
             {snapshot?.recommendation && (
               <div className="rounded-3xl bg-gradient-to-br from-[#15342c] via-[#11251f] to-[#101a20] p-4 shadow-[0_16px_38px_rgba(0,0,0,.22)]">
                 <div className="flex items-center justify-between gap-3">
@@ -399,7 +415,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         </aside>
 
-        <section className="absolute bottom-3 left-[407px] right-3 z-20 rounded-2xl border border-white/10 bg-[#101820]/94 p-3 shadow-xl backdrop-blur-md max-md:bottom-2 max-md:left-2 max-md:right-2">
+        <section className="absolute bottom-3 left-[387px] right-3 z-20 rounded-2xl border border-white/10 bg-[#101820]/94 p-3 shadow-xl backdrop-blur-md max-md:bottom-2 max-md:left-2 max-md:right-2">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-[100px]">
               <div className="flex items-center gap-1 text-[9px] font-bold text-[#f0bb62]"><ThermometerSun className="size-3" /> 방문 시간</div>

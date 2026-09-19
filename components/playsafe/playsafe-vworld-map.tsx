@@ -161,7 +161,7 @@ export function PlaySafeVWorldMap({
           }
 
           try {
-            viewer.scene.globe.depthTestAgainstTerrain = false;
+            viewer.scene.globe.depthTestAgainstTerrain = true;
           } catch {
             // Not critical for the presentation overlay.
           }
@@ -202,7 +202,7 @@ export function PlaySafeVWorldMap({
       }
       mapRef.current = null;
     };
-  }, [onUnavailable, snapshot.query.center.lat, snapshot.query.center.lon]);
+  }, [onUnavailable]);
 
   useEffect(() => {
     const apply = () => {
@@ -217,12 +217,13 @@ export function PlaySafeVWorldMap({
       snapshot.trees.slice(0, 80).forEach((tree, index) => {
         viewer.entities.add({
           id: "playsafe:tree:" + index,
-          position: Cesium.Cartesian3.fromDegrees(tree.point.lon, tree.point.lat, 2),
+          position: Cesium.Cartesian3.fromDegrees(tree.point.lon, tree.point.lat),
           point: {
             pixelSize: 5,
             color: Cesium.Color.fromCssColorString("#55c77a").withAlpha(0.8),
             outlineColor: Cesium.Color.fromCssColorString("#d6f5dc").withAlpha(0.75),
             outlineWidth: 1,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
         });
@@ -236,10 +237,10 @@ export function PlaySafeVWorldMap({
           position: Cesium.Cartesian3.fromDegrees(
             assessment.place.point.lon,
             assessment.place.point.lat,
-            4,
           ),
           point: {
             pixelSize: selected ? 18 : 13,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             color: fitColor(Cesium, assessment.fitScore),
             outlineColor: Cesium.Color.WHITE,
             outlineWidth: selected ? 4 : 2,
@@ -254,6 +255,7 @@ export function PlaySafeVWorldMap({
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
             pixelOffset: new Cesium.Cartesian2(0, selected ? -42 : -32),
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
             showBackground: true,
             backgroundColor: Cesium.Color.fromCssColorString("#0b1116").withAlpha(0.78),
@@ -268,14 +270,24 @@ export function PlaySafeVWorldMap({
 
       if (selected.place.boundary && selected.place.boundary.length >= 3) {
         const coordinates = selected.place.boundary.flatMap((point) => [point.lon, point.lat]);
+        const boundaryPositions = Cesium.Cartesian3.fromDegreesArray(coordinates);
         viewer.entities.add({
           id: "playsafe:selected-boundary",
           polygon: {
-            hierarchy: Cesium.Cartesian3.fromDegreesArray(coordinates),
-            material: fitColor(Cesium, selected.fitScore).withAlpha(0.10),
-            outline: true,
-            outlineColor: fitColor(Cesium, selected.fitScore).withAlpha(0.92),
-            height: 1.0,
+            hierarchy: boundaryPositions,
+            material: fitColor(Cesium, selected.fitScore).withAlpha(0.08),
+            height: 0,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            classificationType: Cesium.ClassificationType.TERRAIN,
+          },
+        });
+        viewer.entities.add({
+          id: "playsafe:selected-boundary-line",
+          polyline: {
+            positions: [...boundaryPositions, boundaryPositions[0]],
+            width: 3,
+            material: fitColor(Cesium, selected.fitScore).withAlpha(0.95),
+            clampToGround: true,
           },
         });
       }
@@ -284,14 +296,16 @@ export function PlaySafeVWorldMap({
         const color = exposureColor(Cesium, sample.exposurePct);
         viewer.entities.add({
           id: "playsafe:heat:" + index,
-          position: Cesium.Cartesian3.fromDegrees(sample.point.lon, sample.point.lat, 1.5),
+          position: Cesium.Cartesian3.fromDegrees(sample.point.lon, sample.point.lat),
           ellipse: {
-            semiMajorAxis: 8.5,
-            semiMinorAxis: 8.5,
-            material: color.withAlpha(sample.shaded ? 0.22 : 0.42),
+            semiMajorAxis: 7.5,
+            semiMinorAxis: 7.5,
+            material: color.withAlpha(sample.shaded ? 0.16 : 0.34),
             outline: true,
-            outlineColor: color.withAlpha(0.82),
-            height: 1.2,
+            outlineColor: color.withAlpha(0.72),
+            height: 0.35,
+            heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+            classificationType: Cesium.ClassificationType.TERRAIN,
           },
         });
       });
@@ -301,13 +315,13 @@ export function PlaySafeVWorldMap({
         position: Cesium.Cartesian3.fromDegrees(
           selected.place.point.lon,
           selected.place.point.lat,
-          8,
         ),
         point: {
           pixelSize: 20,
           color: Cesium.Color.fromCssColorString("#111922"),
           outlineColor: Cesium.Color.WHITE,
           outlineWidth: 4,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
@@ -318,6 +332,7 @@ export function PlaySafeVWorldMap({
           outlineWidth: 5,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           pixelOffset: new Cesium.Cartesian2(0, -52),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           showBackground: true,
           backgroundColor: Cesium.Color.fromCssColorString("#0b1116").withAlpha(0.88),
