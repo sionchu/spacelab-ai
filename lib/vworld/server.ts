@@ -7,6 +7,30 @@ export type AddressSearchResult = {
   point: GeoPoint;
 };
 
+const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
+let nominatimQueue: Promise<void> = Promise.resolve();
+let nominatimNextAllowedAt = 0;
+
+async function withNominatimRateLimit<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = nominatimQueue;
+  let release = () => undefined;
+  nominatimQueue = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  await previous;
+  try {
+    const delayMs = Math.max(0, nominatimNextAllowedAt - Date.now());
+    if (delayMs > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+    }
+    nominatimNextAllowedAt = Date.now() + 1_100;
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
 function apiKey() {
   return process.env.VWORLD_API_KEY || process.env.VITE_VWORLD_API_KEY || "";
 }
@@ -54,51 +78,106 @@ async function requestJson(url: URL) {
   }
 }
 
-export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
-  const key = apiKey();
-  if (!key) throw new Error("VWORLD_API_KEY is not configured");
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+async function searchNominatim(query: string): Promise<AddressSearchResult[]> {
+  const url = buildUrl("https://nominatim.openstreetmap.org/search", {
+    q: query,
+    format: "jsonv2",
+    limit: 8,
+    countrycodes: "kr",
+    "accept-language": "ko",
+    addressdetails: 1,
+  });
 
-  const all: AddressSearchResult[] = [];
-  for (const category of ["ROAD", "PARCEL"] as const) {
-    const url = buildUrl("https://api.vworld.kr/req/search", {
-      service: "search",
-      request: "search",
-      version: "2.0",
-      crs: "EPSG:4326",
-      size: 8,
-      page: 1,
-      query: trimmed,
-      type: "ADDRESS",
-      category,
-      format: "json",
-      key,
-      domain: apiDomain(),
+  return withNominatimRateLimit(async () => {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+        Referer: "https://github.com/sionchu/spacelab-ai",
+      },
+      signal: AbortSignal.timeout(10_000),
+      next: { revalidate: 86_400 },
     });
-    const payload = await requestJson(url);
-    if (responseStatus(payload) !== "OK") continue;
-    for (const item of payload?.response?.result?.items ?? []) {
-      const lon = Number(item?.point?.x);
-      const lat = Number(item?.point?.y);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-      const address = String(item?.address?.road || item?.address?.parcel || item?.title || trimmed);
-      all.push({
-        id: category + "-" + lon + "-" + lat + "-" + all.length,
-        title: String(item?.title || address),
-        address,
+    if (!response.ok) throw new Error("Nominatim request failed: HTTP " + response.status);
+    const payload = await response.json() as Array<Record<string, unknown>>;
+    return payload.flatMap((item, index) => {
+      const lon = Number(item.lon);
+      const lat = Number(item.lat);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+      const displayName = String(item.display_name || query);
+      const name = String(item.name || displayName.split(",")[0] || displayName);
+      return [{
+        id: "osm-" + String(item.place_id ?? index),
+        title: name,
+        address: displayName,
         point: { lon, lat },
-      });
-    }
-  }
+      }];
+    });
+  });
+}
 
+function dedupeSearchResults(items: AddressSearchResult[]) {
   const seen = new Set<string>();
-  return all.filter((item) => {
+  return items.filter((item) => {
     const keyValue = item.point.lon.toFixed(7) + "," + item.point.lat.toFixed(7);
     if (seen.has(keyValue)) return false;
     seen.add(keyValue);
     return true;
   }).slice(0, 8);
+}
+
+export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const key = apiKey();
+  const all: AddressSearchResult[] = [];
+  if (key) {
+    try {
+      for (const category of ["ROAD", "PARCEL"] as const) {
+        const url = buildUrl("https://api.vworld.kr/req/search", {
+          service: "search",
+          request: "search",
+          version: "2.0",
+          crs: "EPSG:4326",
+          size: 8,
+          page: 1,
+          query: trimmed,
+          type: "ADDRESS",
+          category,
+          format: "json",
+          key,
+          domain: apiDomain(),
+        });
+        const payload = await requestJson(url);
+        if (responseStatus(payload) !== "OK") continue;
+        for (const item of payload?.response?.result?.items ?? []) {
+          const lon = Number(item?.point?.x);
+          const lat = Number(item?.point?.y);
+          if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+          const address = String(item?.address?.road || item?.address?.parcel || item?.title || trimmed);
+          all.push({
+            id: category + "-" + lon + "-" + lat + "-" + all.length,
+            title: String(item?.title || address),
+            address,
+            point: { lon, lat },
+          });
+        }
+      }
+    } catch (error) {
+      console.warn("[vworld] search fallback", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const vworldResults = dedupeSearchResults(all);
+  if (vworldResults.length) return vworldResults;
+
+  try {
+    return dedupeSearchResults(await searchNominatim(trimmed));
+  } catch (error) {
+    console.warn("[nominatim] search failed", error instanceof Error ? error.message : String(error));
+    return [];
+  }
 }
 
 function firstBoundary(geometry: any): GeoPoint[] {
@@ -123,9 +202,13 @@ function averageCenter(boundary: GeoPoint[], fallback: GeoPoint) {
   };
 }
 
+function manualSite(pointValue: GeoPoint, label?: string): Site {
+  return manualSite(pointValue, label);
+}
+
 export async function parcelAtPoint(pointValue: GeoPoint, label?: string): Promise<Site> {
   const key = apiKey();
-  if (!key) throw new Error("VWORLD_API_KEY is not configured");
+  if (!key) return manualSite(pointValue, label);
 
   const url = buildUrl("https://api.vworld.kr/req/data", {
     service: "data",
@@ -143,7 +226,13 @@ export async function parcelAtPoint(pointValue: GeoPoint, label?: string): Promi
     domain: apiDomain(),
   });
 
-  const payload = await requestJson(url);
+  let payload: any;
+  try {
+    payload = await requestJson(url);
+  } catch (error) {
+    console.warn("[vworld] parcel fallback", error instanceof Error ? error.message : String(error));
+    return manualSite(pointValue, label);
+  }
   const feature = payload?.response?.result?.featureCollection?.features?.[0];
   const boundary = firstBoundary(feature?.geometry);
   const properties = feature?.properties ?? {};
