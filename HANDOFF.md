@@ -22,6 +22,9 @@ Branch: `codex/next-maplibre-v1`
 - VWorld address/parcel requests moved behind Next.js Route Handlers
 - VWorld `F_FAC_BUILDING` surrounding-building GeoJSON with OSM fallback
 - surrounding building height normalization and MapLibre fill-extrusion
+- shared surrounding-building GeoJSON context for renderer and analysis
+- deterministic View Impact from a saved viewpoint against surrounding building footprints/heights
+- active/compare View Impact readout with viewpoint marker and eye-height control
 - old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
 - canonical Site / BuildingMass / Scenario / actions / analysis retained
 
@@ -50,4 +53,4 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 
 ## Next concrete action
 
-Reconnect View Impact to the MapLibre/GeoJSON context, then restore Concept View without feeding generated imagery back into analysis geometry.
+Restore Concept View on the Next.js/MapLibre shell without feeding generated imagery back into analysis geometry. After renderer/analysis parity, restore WebMCP parity.
