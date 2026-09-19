@@ -19,7 +19,7 @@ const emptyBuildings: FeatureCollection<Polygon> = {
   features: [],
 };
 
-function baseStyle(demTileJson: string): StyleSpecification {
+function baseStyle(demTileTemplate: string): StyleSpecification {
   return {
     version: 8,
     name: "SpaceLab map-first",
@@ -39,13 +39,21 @@ function baseStyle(demTileJson: string): StyleSpecification {
       },
       terrain: {
         type: "raster-dem",
-        url: demTileJson,
+        tiles: [demTileTemplate],
         tileSize: 256,
+        encoding: "terrarium",
+        minzoom: 0,
+        maxzoom: 15,
+        attribution: "© AWS Terrain Tiles",
       },
       hillshadeDem: {
         type: "raster-dem",
-        url: demTileJson,
+        tiles: [demTileTemplate],
         tileSize: 256,
+        encoding: "terrarium",
+        minzoom: 0,
+        maxzoom: 15,
+        attribution: "© AWS Terrain Tiles",
       },
     },
     layers: [
@@ -111,8 +119,8 @@ export function SpatialMap({
   const [ready, setReady] = useState(false);
   const [contextBuildings, setContextBuildings] = useState<FeatureCollection<Polygon>>(emptyBuildings);
   const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
-  const demTileJson = process.env.NEXT_PUBLIC_DEM_TILEJSON
-    || "https://demotiles.maplibre.org/terrain-tiles/tiles.json";
+  const demTileTemplate = process.env.NEXT_PUBLIC_DEM_TILE_TEMPLATE
+    || "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png";
   const radius = Number(process.env.NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M || 350);
 
   onMapClickRef.current = onMapClick;
@@ -130,7 +138,7 @@ export function SpatialMap({
 
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: baseStyle(demTileJson),
+      style: baseStyle(demTileTemplate),
       center: [site.center.lon, site.center.lat],
       zoom: 16,
       pitch: 58,
@@ -262,7 +270,7 @@ export function SpatialMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [demTileJson]);
+  }, [demTileTemplate]);
 
   useEffect(() => {
     if (!ready || !mapRef.current) return;
