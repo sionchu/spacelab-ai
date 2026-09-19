@@ -5,7 +5,11 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { featureCollection, point, polygon } from "@turf/turf";
 import type { Feature, Point } from "geojson";
-import { playSafeShadowPolygons, type PlaySafeSnapshot } from "@/src/playsafe";
+import {
+  playSafeShadowPolygons,
+  type PlaySafeMapViewAction,
+  type PlaySafeSnapshot,
+} from "@/src/playsafe";
 
 const baseStyle: StyleSpecification = {
   version: 8,
@@ -48,17 +52,20 @@ export function PlaySafeMap({
   snapshot,
   selectedPlaceId,
   previewAt,
+  viewAction,
   onSelectPlace,
 }: {
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
   previewAt: string;
+  viewAction?: PlaySafeMapViewAction;
   onSelectPlace: (placeId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const avatarRef = useRef<maplibregl.Marker | null>(null);
+  const lastCameraPlaceRef = useRef<string | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -342,22 +349,30 @@ export function PlaySafeMap({
     setGeoJson(map, "context-buildings", snapshot.buildings);
     setGeoJson(map, "playsafe-trees", treesGeoJson);
     setGeoJson(map, "selected-place-boundary", selectedBoundaryGeoJson);
-    setGeoJson(map, "playsafe-shadows", shadowGeoJson);
     setGeoJson(map, "playsafe-places", placesGeoJson);
     setGeoJson(map, "heat-samples", heatGeoJson);
-  }, [heatGeoJson, mapReady, placesGeoJson, selectedBoundaryGeoJson, shadowGeoJson, snapshot.buildings, treesGeoJson]);
+  }, [heatGeoJson, mapReady, placesGeoJson, selectedBoundaryGeoJson, snapshot.buildings, treesGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    setGeoJson(map, "playsafe-shadows", shadowGeoJson);
+  }, [mapReady, shadowGeoJson]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !selected) return;
 
-    map.easeTo({
-      center: [selected.place.point.lon, selected.place.point.lat],
-      zoom: 16.8,
-      pitch: 62,
-      bearing: -24,
-      duration: 900,
-    });
+    if (lastCameraPlaceRef.current !== selected.place.id) {
+      lastCameraPlaceRef.current = selected.place.id;
+      map.easeTo({
+        center: [selected.place.point.lon, selected.place.point.lat],
+        zoom: 16.8,
+        pitch: 62,
+        bearing: -24,
+        duration: 650,
+      });
+    }
 
     const element = document.createElement("div");
     element.setAttribute("aria-label", `${snapshot.query.childAge}세 아이 위치`);
@@ -379,6 +394,23 @@ export function PlaySafeMap({
       .setLngLat([selected.place.point.lon, selected.place.point.lat])
       .addTo(map);
   }, [mapReady, selected, snapshot.query.childAge]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !viewAction) return;
+
+    const target = viewAction.type === "top"
+      ? selected?.place.point ?? snapshot.query.center
+      : snapshot.query.center;
+
+    map.easeTo({
+      center: [target.lon, target.lat],
+      zoom: viewAction.type === "top" ? 17.2 : 15.2,
+      pitch: viewAction.type === "top" ? 0 : 62,
+      bearing: viewAction.type === "top" ? 0 : -24,
+      duration: 650,
+    });
+  }, [mapReady, selected, snapshot.query.center, viewAction]);
 
   return (
     <div className="absolute inset-0">

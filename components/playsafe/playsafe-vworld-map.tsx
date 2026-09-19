@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { playSafeShadowPolygons, type PlaySafeSnapshot } from "@/src/playsafe";
+import {
+  playSafeShadowPolygons,
+  type PlaySafeMapViewAction,
+  type PlaySafeSnapshot,
+} from "@/src/playsafe";
 
 type VWorldMapLike = {
   setOption: (options: Record<string, unknown>) => void;
@@ -95,10 +99,13 @@ function kstDate(localDateTime: string) {
   return new Date(value);
 }
 
-function clearPlaySafeEntities(viewer: any) {
+function clearPlaySafeEntities(viewer: any, prefixes = ["playsafe:"]) {
   const values = [...viewer.entities.values] as Array<{ id?: string }>;
   for (const entity of values) {
-    if (typeof entity.id === "string" && entity.id.startsWith("playsafe:")) {
+    if (
+      typeof entity.id === "string"
+      && prefixes.some((prefix) => entity.id?.startsWith(prefix))
+    ) {
       viewer.entities.remove(entity);
     }
   }
@@ -108,12 +115,14 @@ export function PlaySafeVWorldMap({
   snapshot,
   selectedPlaceId,
   previewAt,
+  viewAction,
   onSelectPlace,
   onUnavailable,
 }: {
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
   previewAt: string;
+  viewAction?: PlaySafeMapViewAction;
   onSelectPlace: (placeId: string) => void;
   onUnavailable: (reason: string) => void;
 }) {
@@ -121,6 +130,7 @@ export function PlaySafeVWorldMap({
   const mapRef = useRef<VWorldMapLike | null>(null);
   const viewerRef = useRef<any>(undefined);
   const clickHandlerRef = useRef<any>(undefined);
+  const shadowFrameRef = useRef<number | undefined>(undefined);
   const readyRef = useRef(false);
   const lastCameraPlaceRef = useRef<string | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
@@ -177,8 +187,11 @@ export function PlaySafeVWorldMap({
           try {
             viewer.scene.globe.depthTestAgainstTerrain = true;
             viewer.scene.globe.enableLighting = true;
+            viewer.scene.requestRenderMode = true;
+            viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
             viewer.shadows = true;
             viewer.clock.shouldAnimate = false;
+            viewer.scene.requestRender?.();
           } catch {
             // Not critical for the presentation overlay.
           }
@@ -247,34 +260,34 @@ export function PlaySafeVWorldMap({
   }, [onUnavailable]);
 
   useEffect(() => {
-    const apply = () => {
+    const applyStatic = () => {
       if (!readyRef.current) return;
       const runtime = window as VWorldWindow;
       const viewer = viewerRef.current;
       const Cesium = runtime.Cesium;
       if (!viewer || !Cesium) return;
 
+      clearPlaySafeEntities(viewer, [
+        "playsafe:tree:",
+        "playsafe:place:",
+        "playsafe:selected-boundary",
+        "playsafe:heat:",
+        "playsafe:child",
+      ]);
+
       try {
-        const previewDate = kstDate(previewAt);
-        if (!Number.isNaN(previewDate.getTime())) {
-          viewer.clock.currentTime = Cesium.JulianDate.fromDate(previewDate);
-          viewer.clock.shouldAnimate = false;
-        }
-        viewer.shadows = true;
-        viewer.scene.globe.enableLighting = true;
         const primitives = viewer.scene.primitives;
         if (primitives?.length && Cesium.ShadowMode) {
           for (let index = 0; index < primitives.length; index += 1) {
             const primitive = primitives.get(index);
-            if (primitive && "shadows" in primitive) primitive.shadows = Cesium.ShadowMode.ENABLED;
+            if (primitive && "shadows" in primitive) {
+              primitive.shadows = Cesium.ShadowMode.ENABLED;
+            }
           }
         }
-        viewer.scene.requestRender?.();
       } catch {
-        // The PlaySafe analytical shadow overlay below remains available.
+        // The analytical shadow overlay is independent of VWorld tile shadow support.
       }
-
-      clearPlaySafeEntities(viewer);
 
       snapshot.trees.slice(0, 80).forEach((tree, index) => {
         viewer.entities.add({
@@ -292,7 +305,7 @@ export function PlaySafeVWorldMap({
       });
 
       for (const assessment of snapshot.assessments) {
-        const selected = assessment.place.id === selectedPlaceId;
+        const isSelected = assessment.place.id === selectedPlaceId;
         viewer.entities.add({
           id: "playsafe:place:" + assessment.place.id,
           name: assessment.place.name,
@@ -301,23 +314,23 @@ export function PlaySafeVWorldMap({
             assessment.place.point.lat,
           ),
           point: {
-            pixelSize: selected ? 18 : 13,
+            pixelSize: isSelected ? 18 : 13,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             color: fitColor(Cesium, assessment.fitScore),
             outlineColor: Cesium.Color.WHITE,
-            outlineWidth: selected ? 4 : 2,
+            outlineWidth: isSelected ? 4 : 2,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: selected
+            text: isSelected
               ? assessment.place.name + " · " + Math.round(assessment.fitScore)
               : assessment.place.name,
-            font: selected ? "700 15px sans-serif" : "600 12px sans-serif",
+            font: isSelected ? "700 15px sans-serif" : "600 12px sans-serif",
             fillColor: Cesium.Color.WHITE,
             outlineColor: Cesium.Color.fromCssColorString("#071015"),
-            outlineWidth: selected ? 4 : 3,
+            outlineWidth: isSelected ? 4 : 3,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: new Cesium.Cartesian2(0, selected ? -38 : -28),
+            pixelOffset: new Cesium.Cartesian2(0, isSelected ? -38 : -28),
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
@@ -329,29 +342,6 @@ export function PlaySafeVWorldMap({
       const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
         ?? snapshot.assessments[0];
       if (!selected) return;
-
-      const shadowPolygons = playSafeShadowPolygons(
-        selected.place,
-        snapshot.buildings,
-        snapshot.trees,
-        previewAt,
-      );
-      shadowPolygons.slice(0, 180).forEach((polygon, index) => {
-        if (polygon.length < 3) return;
-        const positions = Cesium.Cartesian3.fromDegreesArray(
-          polygon.flatMap((point) => [point.lon, point.lat]),
-        );
-        viewer.entities.add({
-          id: "playsafe:shadow:" + index,
-          polygon: {
-            hierarchy: positions,
-            material: Cesium.Color.fromCssColorString("#071015").withAlpha(0.28),
-            height: 0.08,
-            heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
-            classificationType: Cesium.ClassificationType.TERRAIN,
-          },
-        });
-      });
 
       if (selected.place.boundary && selected.place.boundary.length >= 3) {
         const coordinates = selected.place.boundary.flatMap((point) => [point.lon, point.lat]);
@@ -436,15 +426,121 @@ export function PlaySafeVWorldMap({
             pitch: Cesium.Math.toRadians(-48),
             roll: 0,
           },
-          duration: 1.0,
+          duration: 0.8,
         });
       }
+
+      viewer.scene.requestRender?.();
     };
 
-    apply();
-    window.addEventListener("playsafe-vworld-ready", apply);
-    return () => window.removeEventListener("playsafe-vworld-ready", apply);
-  }, [previewAt, selectedPlaceId, snapshot]);
+    applyStatic();
+    window.addEventListener("playsafe-vworld-ready", applyStatic);
+    return () => window.removeEventListener("playsafe-vworld-ready", applyStatic);
+  }, [selectedPlaceId, snapshot]);
+
+  useEffect(() => {
+    const applyTime = () => {
+      if (!readyRef.current) return;
+      const runtime = window as VWorldWindow;
+      const viewer = viewerRef.current;
+      const Cesium = runtime.Cesium;
+      if (!viewer || !Cesium) return;
+
+      const previewDate = kstDate(previewAt);
+      if (!Number.isNaN(previewDate.getTime())) {
+        viewer.clock.currentTime = Cesium.JulianDate.fromDate(previewDate);
+        viewer.clock.shouldAnimate = false;
+      }
+
+      clearPlaySafeEntities(viewer, ["playsafe:shadow:"]);
+
+      const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
+        ?? snapshot.assessments[0];
+      if (selected) {
+        const shadowPolygons = playSafeShadowPolygons(
+          selected.place,
+          snapshot.buildings,
+          snapshot.trees,
+          previewAt,
+        );
+        shadowPolygons.slice(0, 180).forEach((polygon, index) => {
+          if (polygon.length < 3) return;
+          const positions = Cesium.Cartesian3.fromDegreesArray(
+            polygon.flatMap((point) => [point.lon, point.lat]),
+          );
+          viewer.entities.add({
+            id: "playsafe:shadow:" + index,
+            polygon: {
+              hierarchy: positions,
+              material: Cesium.Color.fromCssColorString("#071015").withAlpha(0.28),
+              height: 0.08,
+              heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+              classificationType: Cesium.ClassificationType.TERRAIN,
+            },
+          });
+        });
+      }
+
+      viewer.scene.requestRender?.();
+    };
+
+    const schedule = () => {
+      if (shadowFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(shadowFrameRef.current);
+      }
+      shadowFrameRef.current = window.requestAnimationFrame(() => {
+        shadowFrameRef.current = undefined;
+        applyTime();
+      });
+    };
+
+    schedule();
+    window.addEventListener("playsafe-vworld-ready", schedule);
+    return () => {
+      window.removeEventListener("playsafe-vworld-ready", schedule);
+      if (shadowFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(shadowFrameRef.current);
+        shadowFrameRef.current = undefined;
+      }
+    };
+  }, [previewAt, selectedPlaceId, snapshot.assessments, snapshot.buildings, snapshot.trees]);
+
+  useEffect(() => {
+    if (!viewAction) return;
+
+    const applyCamera = () => {
+      if (!readyRef.current) return;
+      const runtime = window as VWorldWindow;
+      const viewer = viewerRef.current;
+      const Cesium = runtime.Cesium;
+      if (!viewer || !Cesium) return;
+
+      const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
+        ?? snapshot.assessments[0];
+      const target = viewAction.type === "top"
+        ? selected?.place.point ?? snapshot.query.center
+        : snapshot.query.center;
+
+      viewer.camera.flyTo({
+        destination: Cesium.Cartesian3.fromDegrees(
+          target.lon,
+          target.lat,
+          viewAction.type === "top" ? 900 : 850,
+        ),
+        orientation: {
+          heading: Cesium.Math.toRadians(viewAction.type === "top" ? 0 : 335),
+          pitch: Cesium.Math.toRadians(viewAction.type === "top" ? -90 : -48),
+          roll: 0,
+        },
+        duration: 0.65,
+      });
+      viewer.scene.requestRender?.();
+    };
+
+    applyCamera();
+    window.addEventListener("playsafe-vworld-ready", applyCamera);
+    return () => window.removeEventListener("playsafe-vworld-ready", applyCamera);
+  }, [selectedPlaceId, snapshot.assessments, snapshot.query.center, viewAction]);
 
   return (
     <div className="absolute inset-0">

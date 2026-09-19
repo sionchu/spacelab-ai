@@ -1,13 +1,23 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, Clock3, Copy, MapPin, Search, Sparkles, ThermometerSun } from "lucide-react";
+import {
+  ChevronDown,
+  Clock3,
+  Copy,
+  LocateFixed,
+  Map as MapIcon,
+  MapPin,
+  Search,
+  Sparkles,
+  ThermometerSun,
+} from "lucide-react";
 import { PlaySafeMap } from "@/components/playsafe/playsafe-map";
 import { PlaySafeVWorldMap } from "@/components/playsafe/playsafe-vworld-map";
 import { Slider } from "@/components/ui/slider";
 import { timeFromMinutes } from "@/lib/solar/sun";
 import type { GeoPoint } from "@/src/types";
-import type { PlaySafeSnapshot } from "@/src/playsafe";
+import type { PlaySafeMapViewAction, PlaySafeSnapshot } from "@/src/playsafe";
 import { registerPlaySafeTools } from "@/src/playsafe-webmcp";
 
 type SearchResult = {
@@ -55,6 +65,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string>();
   const [copiedPlaceId, setCopiedPlaceId] = useState<string>();
+  const [viewAction, setViewAction] = useState<PlaySafeMapViewAction>();
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -107,7 +118,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     const registration = registerPlaySafeTools({
       getSnapshot: () => snapshotRef.current,
       getSelectedPlaceId: () => selectedRef.current,
-      selectPlace: setSelectedPlaceId,
+      selectPlace,
     });
     return registration.dispose;
   }, []);
@@ -135,6 +146,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setQuery(result.title);
     setSearchResults([]);
     setSelectedPlaceId(undefined);
+    triggerMapView("search");
   }
 
   async function copyAddress(placeId: string, address?: string) {
@@ -142,6 +154,18 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     await navigator.clipboard.writeText(address);
     setCopiedPlaceId(placeId);
     window.setTimeout(() => setCopiedPlaceId((current) => current === placeId ? undefined : current), 1_500);
+  }
+
+  function triggerMapView(type: PlaySafeMapViewAction["type"]) {
+    setViewAction((current) => ({
+      type,
+      nonce: (current?.nonce ?? 0) + 1,
+    }));
+  }
+
+  function selectPlace(placeId: string) {
+    setSelectedPlaceId(placeId);
+    setViewAction(undefined);
   }
 
   const selected = snapshot?.assessments.find((item) => item.place.id === selectedPlaceId)
@@ -163,7 +187,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
             previewAt={previewAt}
-            onSelectPlace={setSelectedPlaceId}
+            viewAction={viewAction}
+            onSelectPlace={selectPlace}
             onUnavailable={handleVWorldUnavailable}
           />
         )}
@@ -173,7 +198,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
             previewAt={previewAt}
-            onSelectPlace={setSelectedPlaceId}
+            viewAction={viewAction}
+            onSelectPlace={selectPlace}
           />
         )}
 
@@ -183,7 +209,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <header className="pointer-events-none absolute left-4 right-4 top-4 z-30 flex items-start justify-between gap-3 max-md:left-2 max-md:right-2 max-md:top-2">
+        <header className="pointer-events-none absolute left-4 right-4 top-4 z-30 flex items-start justify-between gap-3 max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-2">
           <div className="pointer-events-auto min-w-0 rounded-2xl bg-[#081116]/78 px-3 py-2.5 shadow-lg backdrop-blur-xl">
             <div className="flex items-center gap-2">
               <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
@@ -208,8 +234,31 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           )}
         </header>
 
-        <aside className="absolute bottom-[52px] left-4 top-[82px] z-20 w-[392px] overflow-y-auto rounded-[30px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-md:bottom-[52px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[68dvh] max-md:w-auto">
-          <div className="p-5 max-md:p-4">
+        {snapshot && (
+          <div className="pointer-events-auto absolute right-4 top-[92px] z-30 flex flex-col gap-2 max-[640px]:right-2 max-[640px]:top-[86px]">
+            <button
+              type="button"
+              onClick={() => triggerMapView("top")}
+              className="flex items-center gap-2 rounded-xl bg-[#081116]/84 px-3 py-2 text-[12px] font-semibold text-[#dce5e9] shadow-lg backdrop-blur-xl hover:bg-[#101b22]"
+              title="선택한 놀이터를 위에서 보기"
+            >
+              <MapIcon className="size-4 text-[#72e2d3]" />
+              탑뷰
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerMapView("search")}
+              className="flex items-center gap-2 rounded-xl bg-[#081116]/84 px-3 py-2 text-[12px] font-semibold text-[#dce5e9] shadow-lg backdrop-blur-xl hover:bg-[#101b22]"
+              title="검색한 위치로 돌아가기"
+            >
+              <LocateFixed className="size-4 text-[#d5b85f]" />
+              검색 위치
+            </button>
+          </div>
+        )}
+
+        <aside className="absolute bottom-[52px] left-4 top-[82px] z-20 w-[392px] overflow-y-auto rounded-[30px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[640px]:bottom-[52px] max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-auto max-[640px]:max-h-[68dvh] max-[640px]:w-auto">
+          <div className="p-5 max-[640px]:p-4">
             <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
               <Search className="size-4 shrink-0 text-[#6f7f89]" />
               <input
@@ -237,6 +286,41 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </button>
                 ))}
               </div>
+            )}
+
+            {snapshot && snapshot.assessments.length > 0 && (
+              <section className="mt-4">
+                <div className="flex items-center justify-between">
+                  <strong className="text-[12px] text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
+                  <span className="max-w-[180px] truncate text-[10px] text-[#687780]">{centerLabel}</span>
+                </div>
+                <div className="mt-1">
+                  {snapshot.assessments.slice(0, 3).map((assessment, index) => (
+                    <button
+                      key={assessment.place.id}
+                      type="button"
+                      onClick={() => selectPlace(assessment.place.id)}
+                      className={"flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition " + (
+                        selected?.place.id === assessment.place.id
+                          ? "bg-white/[0.055]"
+                          : "hover:bg-white/[0.03]"
+                      )}
+                    >
+                      <span className="w-5 shrink-0 text-[12px] font-black text-[#6f7f88]">{index + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <strong className="block truncate text-[12px]">{assessment.place.name}</strong>
+                        <span className="mt-0.5 block truncate text-[10px] text-[#74828a]">
+                          {Math.round(assessment.place.distanceM)}m · 그늘 {assessment.shadePct.toFixed(0)}%
+                          {assessment.place.address ? " · " + assessment.place.address : ""}
+                        </span>
+                      </div>
+                      <span className={"shrink-0 text-[18px] font-black tabular-nums " + fitTone(assessment.fitScore)}>
+                        {assessment.fitScore.toFixed(0)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
             )}
 
             {selected && snapshot && (
@@ -379,40 +463,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </p>
                 </section>
 
-                {snapshot.assessments.length > 1 && (
-                  <details className="group mt-6">
-                    <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-[13px] font-bold [&::-webkit-details-marker]:hidden">
-                      다른 장소 {snapshot.assessments.length - 1}곳 비교
-                      <ChevronDown className="size-4 text-[#77858e] transition group-open:rotate-180" />
-                    </summary>
-                    <div className="mt-1">
-                      {snapshot.assessments
-                        .filter((assessment) => assessment.place.id !== selected.place.id)
-                        .map((assessment) => (
-                          <button
-                            key={assessment.place.id}
-                            type="button"
-                            onClick={() => setSelectedPlaceId(assessment.place.id)}
-                            className="flex w-full items-start gap-3 py-3 text-left hover:bg-white/[0.025]"
-                          >
-                            <div className="min-w-0 flex-1">
-                              <strong className="block truncate text-[13px]">{assessment.place.name}</strong>
-                              <span className="mt-0.5 block truncate text-[11px] text-[#74838c]">
-                                {assessment.place.address || `${Math.round(assessment.place.distanceM)}m 거리`}
-                              </span>
-                              <span className="mt-1 block text-[11px] text-[#84939b]">
-                                그늘 {assessment.shadePct.toFixed(0)}% · UV {assessment.uvIndex.toFixed(1)} · {Math.round(assessment.place.distanceM)}m
-                              </span>
-                            </div>
-                            <div className={"shrink-0 text-[22px] font-black tabular-nums " + fitTone(assessment.fitScore)}>
-                              {assessment.fitScore.toFixed(0)}
-                            </div>
-                          </button>
-                        ))}
-                    </div>
-                  </details>
-                )}
-
                 <details className="group mt-4">
                   <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-[13px] font-bold [&::-webkit-details-marker]:hidden">
                     <span className="flex items-center gap-2"><Clock3 className="size-4 text-[#d5b85f]" /> 시간별 변화</span>
@@ -452,7 +502,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
         </aside>
 
         {loading && snapshot && (
-          <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[11px] text-[#93a1aa] backdrop-blur-xl max-md:right-2">
+          <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[11px] text-[#93a1aa] backdrop-blur-xl max-[640px]:right-2">
             조건을 다시 계산하는 중…
           </div>
         )}

@@ -10,6 +10,11 @@ export type PlaySafeTree = {
   crownRadiusM: number;
 };
 
+export type PlaySafeMapViewAction = {
+  type: "top" | "search";
+  nonce: number;
+};
+
 export type PlayPlace = {
   id: string;
   name: string;

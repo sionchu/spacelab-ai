@@ -163,16 +163,31 @@ function choosePlaces(items: PlayPlace[], limit: number) {
   return selected;
 }
 
-export async function playSafeMapContext(
-  lon: number,
-  lat: number,
-  radiusM = 800,
-  limit = 4,
-): Promise<{
+type PlaySafeMapContext = {
   places: PlayPlace[];
   buildings: FeatureCollection<Polygon>;
   trees: PlaySafeTree[];
-}> {
+};
+
+type MapContextCacheEntry = {
+  fetchedAt: number;
+  value?: PlaySafeMapContext;
+  pending?: Promise<PlaySafeMapContext>;
+};
+
+const MAP_CONTEXT_CACHE_TTL_MS = 10 * 60_000;
+const mapContextCache = new Map<string, MapContextCacheEntry>();
+
+function mapContextCacheKey(lon: number, lat: number, radiusM: number, limit: number) {
+  return [lon.toFixed(5), lat.toFixed(5), radiusM, limit].join(":");
+}
+
+async function fetchPlaySafeMapContext(
+  lon: number,
+  lat: number,
+  radiusM: number,
+  limit: number,
+): Promise<PlaySafeMapContext> {
   const url = new URL("https://api.openstreetmap.org/api/0.6/map");
   url.searchParams.set("bbox", bbox(lon, lat, radiusM));
 
@@ -183,7 +198,7 @@ export async function playSafeMapContext(
       Referer: "https://github.com/sionchu/spacelab-ai",
     },
     signal: AbortSignal.timeout(8_000),
-    next: { revalidate: 3_600 },
+    cache: "no-store",
   });
   if (!response.ok) throw new Error("OpenStreetMap map API failed: HTTP " + response.status);
   const xml = await response.text();
@@ -276,4 +291,36 @@ export async function playSafeMapContext(
     buildings: { type: "FeatureCollection", features },
     trees,
   };
+}
+
+export async function playSafeMapContext(
+  lon: number,
+  lat: number,
+  radiusM = 800,
+  limit = 4,
+): Promise<PlaySafeMapContext> {
+  const key = mapContextCacheKey(lon, lat, radiusM, limit);
+  const cached = mapContextCache.get(key);
+  const now = Date.now();
+
+  if (cached?.value && now - cached.fetchedAt <= MAP_CONTEXT_CACHE_TTL_MS) {
+    return cached.value;
+  }
+  if (cached?.pending) return cached.pending;
+
+  const pending = fetchPlaySafeMapContext(lon, lat, radiusM, limit);
+  mapContextCache.set(key, { fetchedAt: now, value: cached?.value, pending });
+
+  try {
+    const value = await pending;
+    mapContextCache.set(key, { fetchedAt: Date.now(), value });
+    return value;
+  } catch (error) {
+    if (cached?.value) {
+      mapContextCache.set(key, cached);
+      return cached.value;
+    }
+    mapContextCache.delete(key);
+    throw error;
+  }
 }
