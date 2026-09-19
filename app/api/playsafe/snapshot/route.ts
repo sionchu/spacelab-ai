@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { buildingsAroundPlayPlaces, findNearbyPlayPlaces } from "@/lib/server/playgrounds";
+import { playSafeMapContext } from "@/lib/server/playgrounds";
 import { playSafeWeather } from "@/lib/server/playsafe-weather";
 import { assessPlayPlace } from "@/src/playsafe";
 
@@ -20,11 +20,11 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [places, weather] = await Promise.all([
-      findNearbyPlayPlaces(lon, lat, 900, 4),
+    const [mapContext, weather] = await Promise.all([
+      playSafeMapContext(lon, lat, 800, 4),
       playSafeWeather(lon, lat, requestedAt),
     ]);
-    const buildings = await buildingsAroundPlayPlaces(places, 180);
+    const { places, buildings } = mapContext;
 
     const assessments = places
       .map((place) =>

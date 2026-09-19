@@ -2,21 +2,44 @@ import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { PlayPlace } from "@/src/playsafe";
 
 const APP_USER_AGENT = "PlaySafe/0.1 (+https://github.com/sionchu/spacelab-ai)";
-const ENDPOINTS = [
-  "https://overpass.private.coffee/api/interpreter",
-  "https://overpass.osm.jp/api/interpreter",
-  "https://overpass-api.de/api/interpreter",
-] as const;
 
-type Element = {
-  id: number;
-  type: "node" | "way" | "relation";
-  lat?: number;
-  lon?: number;
-  center?: { lat?: number; lon?: number };
-  tags?: Record<string, string>;
-  geometry?: Array<{ lat: number; lon: number }>;
+type OsmNode = {
+  id: string;
+  lat: number;
+  lon: number;
+  tags: Record<string, string>;
 };
+
+type ParsedWay = {
+  id: string;
+  refs: string[];
+  tags: Record<string, string>;
+};
+
+function decodeXml(value: string) {
+  return value
+    .replaceAll("&quot;", '"')
+    .replaceAll("&apos;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
+}
+
+function attrs(raw: string) {
+  const values: Record<string, string> = {};
+  const regex = /([A-Za-z_:][A-Za-z0-9_.:-]*)="([^"]*)"/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(raw))) values[match[1]] = decodeXml(match[2]);
+  return values;
+}
+
+function tagsFrom(body: string) {
+  const tags: Record<string, string> = {};
+  const regex = /<tag\s+k="([^"]*)"\s+v="([^"]*)"\s*\/>/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(body))) tags[decodeXml(match[1])] = decodeXml(match[2]);
+  return tags;
+}
 
 function distanceM(aLon: number, aLat: number, bLon: number, bLat: number) {
   const latScale = 111_320;
@@ -24,94 +47,76 @@ function distanceM(aLon: number, aLat: number, bLon: number, bLat: number) {
   return Math.hypot((bLon - aLon) * lonScale, (bLat - aLat) * latScale);
 }
 
-function displayName(element: Element, kind: PlayPlace["kind"]) {
-  const name = element.tags?.["name:ko"] || element.tags?.name;
+function bbox(lon: number, lat: number, radiusM: number) {
+  const latDelta = radiusM / 111_320;
+  const lonDelta = radiusM / (111_320 * Math.cos((lat * Math.PI) / 180));
+  return [
+    lon - lonDelta,
+    lat - latDelta,
+    lon + lonDelta,
+    lat + latDelta,
+  ].map((value) => value.toFixed(7)).join(",");
+}
+
+function parseOsmXml(xml: string) {
+  const nodes = new Map<string, OsmNode>();
+
+  const fullNodeRegex = /<node\s+([^>]*?)>([\s\S]*?)<\/node>/g;
+  let match: RegExpExecArray | null;
+  while ((match = fullNodeRegex.exec(xml))) {
+    const attribute = attrs(match[1]);
+    const lat = Number(attribute.lat);
+    const lon = Number(attribute.lon);
+    if (!attribute.id || !Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    nodes.set(attribute.id, {
+      id: attribute.id,
+      lat,
+      lon,
+      tags: tagsFrom(match[2]),
+    });
+  }
+
+  const simpleNodeRegex = /<node\s+([^>]*?)\/>/g;
+  while ((match = simpleNodeRegex.exec(xml))) {
+    const attribute = attrs(match[1]);
+    if (!attribute.id || nodes.has(attribute.id)) continue;
+    const lat = Number(attribute.lat);
+    const lon = Number(attribute.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    nodes.set(attribute.id, { id: attribute.id, lat, lon, tags: {} });
+  }
+
+  const ways: ParsedWay[] = [];
+  const wayRegex = /<way\s+([^>]*?)>([\s\S]*?)<\/way>/g;
+  while ((match = wayRegex.exec(xml))) {
+    const attribute = attrs(match[1]);
+    if (!attribute.id) continue;
+    const refs = Array.from(match[2].matchAll(/<nd\s+ref="([^"]+)"\s*\/>/g), (item) => item[1]);
+    ways.push({ id: attribute.id, refs, tags: tagsFrom(match[2]) });
+  }
+
+  return { nodes, ways };
+}
+
+function wayPoints(way: ParsedWay, nodes: Map<string, OsmNode>) {
+  return way.refs.flatMap((ref) => {
+    const node = nodes.get(ref);
+    return node ? [{ lon: node.lon, lat: node.lat }] : [];
+  });
+}
+
+function centerOf(points: Array<{ lon: number; lat: number }>) {
+  if (!points.length) return undefined;
+  return {
+    lon: points.reduce((sum, point) => sum + point.lon, 0) / points.length,
+    lat: points.reduce((sum, point) => sum + point.lat, 0) / points.length,
+  };
+}
+
+function displayName(tags: Record<string, string>, kind: PlayPlace["kind"]) {
+  const name = tags["name:ko"] || tags.name;
   if (name) return name;
   return kind === "playground" ? "이름 없는 어린이 놀이터" : "이름 없는 공원";
-}
-
-async function queryOverpass<T>(query: string, label: string): Promise<T> {
-  const requests = ENDPOINTS.map(async (endpoint) => {
-    const url = new URL(endpoint);
-    url.searchParams.set("data", query);
-    const response = await fetch(url, {
-      headers: {
-        Accept: "application/json",
-        "User-Agent": APP_USER_AGENT,
-        Referer: "https://github.com/sionchu/spacelab-ai",
-      },
-      signal: AbortSignal.timeout(4_500),
-      next: { revalidate: 3_600 },
-    });
-    if (!response.ok) throw new Error(new URL(endpoint).host + " HTTP " + response.status);
-    return await response.json() as T;
-  });
-
-  try {
-    return await Promise.any(requests);
-  } catch (error) {
-    console.warn("[playsafe:" + label + "] all endpoints failed", error instanceof Error ? error.message : String(error));
-    throw new Error("PlaySafe map data provider unavailable");
-  }
-}
-
-export async function findNearbyPlayPlaces(
-  lon: number,
-  lat: number,
-  radiusM = 900,
-  limit = 4,
-): Promise<PlayPlace[]> {
-  const query = `[out:json][timeout:8];(
-    nwr["leisure"="playground"](around:${radiusM},${lat},${lon});
-    nwr["leisure"="park"](around:${radiusM},${lat},${lon});
-  );out center tags 30;`;
-
-  const payload = await queryOverpass<{ elements?: Element[] }>(query, "places");
-
-  const items = (payload.elements ?? []).flatMap((element): PlayPlace[] => {
-    const point = {
-      lat: Number(element.lat ?? element.center?.lat),
-      lon: Number(element.lon ?? element.center?.lon),
-    };
-    if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return [];
-    const kind = element.tags?.leisure === "playground" ? "playground" : "park";
-    return [{
-      id: `osm-${element.type}-${element.id}`,
-      name: displayName(element, kind),
-      kind,
-      point,
-      distanceM: distanceM(lon, lat, point.lon, point.lat),
-      tags: element.tags ?? {},
-    }];
-  });
-
-  items.sort((a, b) => {
-    const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
-    const namedRank = (item: PlayPlace) => item.tags.name || item.tags["name:ko"] ? 0 : 1;
-    return kindRank(a) - kindRank(b) || namedRank(a) - namedRank(b) || a.distanceM - b.distanceM;
-  });
-
-  const deduped: PlayPlace[] = [];
-  for (const item of items) {
-    const duplicate = deduped.some((prior) =>
-      distanceM(prior.point.lon, prior.point.lat, item.point.lon, item.point.lat) < 35
-      && prior.kind === item.kind);
-    if (!duplicate) deduped.push(item);
-    if (deduped.length >= limit) break;
-  }
-
-  return deduped;
-}
-
-function bboxAround(point: { lon: number; lat: number }, radiusM: number) {
-  const latDelta = radiusM / 111_320;
-  const lonDelta = radiusM / (111_320 * Math.cos((point.lat * Math.PI) / 180));
-  return [
-    point.lat - latDelta,
-    point.lon - lonDelta,
-    point.lat + latDelta,
-    point.lon + lonDelta,
-  ].map((value) => value.toFixed(7)).join(",");
 }
 
 function numberFrom(value: unknown) {
@@ -127,46 +132,113 @@ function buildingHeightM(tags: Record<string, string>) {
   return 9;
 }
 
-export async function buildingsAroundPlayPlaces(
-  places: PlayPlace[],
-  radiusM = 180,
-): Promise<FeatureCollection<Polygon>> {
-  if (!places.length) return { type: "FeatureCollection", features: [] };
+function choosePlaces(items: PlayPlace[], limit: number) {
+  items.sort((a, b) => {
+    const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
+    const namedRank = (item: PlayPlace) => item.tags.name || item.tags["name:ko"] ? 0 : 1;
+    return kindRank(a) - kindRank(b) || namedRank(a) - namedRank(b) || a.distanceM - b.distanceM;
+  });
 
-  const clauses = places
-    .slice(0, 4)
-    .map((place) => `way["building"](${bboxAround(place.point, radiusM)});`)
-    .join("");
-  const query = `[out:json][timeout:8];(${clauses});out tags geom;`;
+  const selected: PlayPlace[] = [];
+  for (const item of items) {
+    const duplicate = selected.some((prior) =>
+      distanceM(prior.point.lon, prior.point.lat, item.point.lon, item.point.lat) < 35
+      && prior.kind === item.kind);
+    if (!duplicate) selected.push(item);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
 
-  let payload: { elements?: Element[] };
-  try {
-    payload = await queryOverpass<{ elements?: Element[] }>(query, "buildings");
-  } catch {
-    return { type: "FeatureCollection", features: [] };
+export async function playSafeMapContext(
+  lon: number,
+  lat: number,
+  radiusM = 800,
+  limit = 4,
+): Promise<{
+  places: PlayPlace[];
+  buildings: FeatureCollection<Polygon>;
+}> {
+  const url = new URL("https://api.openstreetmap.org/api/0.6/map");
+  url.searchParams.set("bbox", bbox(lon, lat, radiusM));
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: "application/xml,text/xml",
+      "User-Agent": APP_USER_AGENT,
+      Referer: "https://github.com/sionchu/spacelab-ai",
+    },
+    signal: AbortSignal.timeout(8_000),
+    next: { revalidate: 3_600 },
+  });
+  if (!response.ok) throw new Error("OpenStreetMap map API failed: HTTP " + response.status);
+  const xml = await response.text();
+  const parsed = parseOsmXml(xml);
+
+  const placeItems: PlayPlace[] = [];
+
+  for (const node of parsed.nodes.values()) {
+    const leisure = node.tags.leisure;
+    if (leisure !== "playground" && leisure !== "park") continue;
+    const kind: PlayPlace["kind"] = leisure === "playground" ? "playground" : "park";
+    placeItems.push({
+      id: "osm-node-" + node.id,
+      name: displayName(node.tags, kind),
+      kind,
+      point: { lon: node.lon, lat: node.lat },
+      distanceM: distanceM(lon, lat, node.lon, node.lat),
+      tags: node.tags,
+    });
   }
 
+  for (const way of parsed.ways) {
+    const leisure = way.tags.leisure;
+    if (leisure !== "playground" && leisure !== "park") continue;
+    const points = wayPoints(way, parsed.nodes);
+    const center = centerOf(points);
+    if (!center) continue;
+    const kind: PlayPlace["kind"] = leisure === "playground" ? "playground" : "park";
+    placeItems.push({
+      id: "osm-way-" + way.id,
+      name: displayName(way.tags, kind),
+      kind,
+      point: center,
+      distanceM: distanceM(lon, lat, center.lon, center.lat),
+      tags: way.tags,
+    });
+  }
+
+  const places = choosePlaces(placeItems, limit);
   const features: Array<Feature<Polygon>> = [];
-  const seen = new Set<number>();
-  for (const element of payload.elements ?? []) {
-    if (element.type !== "way" || seen.has(element.id) || !element.geometry || element.geometry.length < 3) continue;
-    seen.add(element.id);
-    const coordinates = element.geometry.map((point) => [point.lon, point.lat]);
+
+  for (const way of parsed.ways) {
+    if (!way.tags.building) continue;
+    const points = wayPoints(way, parsed.nodes);
+    if (points.length < 3) continue;
+    const center = centerOf(points);
+    if (!center) continue;
+    const closeToCandidate = places.some((place) =>
+      distanceM(place.point.lon, place.point.lat, center.lon, center.lat) <= 220);
+    if (!closeToCandidate) continue;
+
+    const coordinates = points.map((point) => [point.lon, point.lat]);
     const first = coordinates[0];
     const last = coordinates[coordinates.length - 1];
     if (first[0] !== last[0] || first[1] !== last[1]) coordinates.push([...first]);
-    const tags = element.tags ?? {};
     features.push({
       type: "Feature",
-      id: element.id,
+      id: Number(way.id),
       properties: {
-        ...tags,
+        ...way.tags,
         source: "OpenStreetMap",
-        heightM: buildingHeightM(tags),
+        heightM: buildingHeightM(way.tags),
       },
       geometry: { type: "Polygon", coordinates: [coordinates] },
     });
   }
 
-  return { type: "FeatureCollection", features };
+  return {
+    places,
+    buildings: { type: "FeatureCollection", features },
+  };
 }
