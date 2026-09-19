@@ -395,6 +395,11 @@ function PanelContent({
           <div className="text-[10px] font-bold text-[var(--primary)]">선택 부지</div>
           <div className="mt-1 truncate text-xs font-semibold">{state.site.address || state.site.name}</div>
           {state.site.pnu && <div className="mt-0.5 text-[9px] text-[#7f8c98]">PNU {state.site.pnu}</div>}
+          {state.site.source === "manual-point" && (
+            <div className="mt-1 rounded-lg border border-[#d8ad58]/20 bg-[#2a2315] px-2 py-1.5 text-[9px] leading-4 text-[#d8ad58]">
+              VWorld 지적 API 연결이 불안정해 현재 위치 주변의 임시 경계를 사용 중입니다.
+            </div>
+          )}
         </div>
         <form onSubmit={onSearch} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-xl border border-white/9 bg-[#0d141a]">
           <input
