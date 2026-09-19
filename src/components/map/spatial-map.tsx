@@ -110,6 +110,7 @@ export function SpatialMap({
   const onMapClickRef = useRef(onMapClick);
   const [ready, setReady] = useState(false);
   const [contextBuildings, setContextBuildings] = useState<FeatureCollection<Polygon>>(emptyBuildings);
+  const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
   const demTileJson = process.env.NEXT_PUBLIC_DEM_TILEJSON
     || "https://demotiles.maplibre.org/terrain-tiles/tiles.json";
   const radius = Number(process.env.NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M || 350);
@@ -288,6 +289,7 @@ export function SpatialMap({
   useEffect(() => {
     if (site.source === "demo") {
       setContextBuildings(emptyBuildings);
+      setContextSource("건물 컨텍스트 없음");
       return;
     }
     const controller = new AbortController();
@@ -299,9 +301,21 @@ export function SpatialMap({
     void fetch(`/api/context/buildings?${params}`, { signal: controller.signal })
       .then((response) => response.json())
       .then((data) => {
-        if (data?.type === "FeatureCollection") setContextBuildings(data);
+        if (data?.type !== "FeatureCollection") return;
+        setContextBuildings(data);
+        const source = data.features?.[0]?.properties?.source;
+        setContextSource(
+          typeof source === "string" && source
+            ? source
+            : data.features?.length
+              ? "건물 GeoJSON"
+              : "건물 컨텍스트 없음",
+        );
       })
-      .catch(() => setContextBuildings(emptyBuildings));
+      .catch(() => {
+        setContextBuildings(emptyBuildings);
+        setContextSource("건물 컨텍스트 없음");
+      });
     return () => controller.abort();
   }, [radius, site.center.lat, site.center.lon, site.id, site.source]);
 
@@ -334,9 +348,11 @@ export function SpatialMap({
       <div ref={containerRef} className="maplibre-canvas" />
       <div className="map-source-chip">
         <strong>{ready ? "MapLibre 3D" : "지도 준비 중"}</strong>
-        <span>DEM · OSM 건물 · SpaceLab GeoJSON</span>
+        <span>DEM · 건물 컨텍스트 · SpaceLab GeoJSON</span>
       </div>
-      <div className="map-source-note">주변 건물은 현재 OSM 컨텍스트 · GIS건물통합정보 어댑터 예정</div>
+      <div className="map-source-note">
+        {contextSource} · 건물 {contextBuildings.features.length.toLocaleString()}개
+      </div>
     </div>
   );
 }
