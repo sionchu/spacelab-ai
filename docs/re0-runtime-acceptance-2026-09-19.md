@@ -101,3 +101,30 @@ Root cause was a recursive `manualSite()` fallback. It was fixed in `4208dbc46d2
 Evidence: `docs/codex-aside-browser-acceptance-pass1-2026-09-19.md`
 
 The same browser host did not expose `document.modelContext`, so WebMCP discovery was blocked by host capability rather than by the SpaceLab tool-registration code.
+
+
+## Codex browser pass 2
+
+Production application acceptance passed after the parcel fallback fix.
+
+Highlights:
+
+- `POST /api/vworld/parcel`: HTTP 200
+- site selection: PASS
+- `manual-point` fallback provenance: PASS
+- surrounding OpenStreetMap context: PASS
+- planned mass create/edit: PASS
+- A/B scenario comparison: PASS
+- viewpoint and eye-height controls: PASS
+- View Impact for A/B: PASS
+- Concept View entry exists; image generation not invoked
+- previous stack-overflow defect did not recur
+
+Host-only limitations:
+
+- responsive resize was not available in Codex Aside Browser, although navigation buttons were present in the DOM;
+- `document.modelContext` was undefined, so Site Tools/WebMCP discovery remains `BLOCKED_BY_HOST`.
+
+These are not classified as SpaceLab application blockers.
+
+Evidence: `docs/codex-aside-browser-acceptance-pass2-2026-09-19.md`
