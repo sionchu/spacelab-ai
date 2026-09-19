@@ -4,11 +4,18 @@ import type { GeoPoint, LocalPoint } from "./types";
 
 export type PlayPlaceKind = "playground" | "park";
 
+export type PlaySafeTree = {
+  point: GeoPoint;
+  heightM: number;
+  crownRadiusM: number;
+};
+
 export type PlayPlace = {
   id: string;
   name: string;
   kind: PlayPlaceKind;
   point: GeoPoint;
+  boundary?: GeoPoint[];
   distanceM: number;
   tags: Record<string, string>;
 };
@@ -21,6 +28,7 @@ export type PlaySafeWeather = {
   cloudCoverPct: number;
   precipitationMm: number;
   windSpeedKph: number;
+  uvIndex: number;
 };
 
 export type HeatSample = {
@@ -34,6 +42,7 @@ export type PlaySafeTimelinePoint = {
   fitScore: number;
   shadePct: number;
   apparentTemperatureC: number;
+  uvIndex: number;
   label: PlaySafeAssessment["label"];
 };
 
@@ -45,6 +54,11 @@ export type PlaySafeAssessment = {
   directSunPct: number;
   exposureScore: number;
   fitScore: number;
+  uvIndex: number;
+  surfaceHeatSignal: "낮음" | "보통" | "높음" | "정보 없음";
+  surfaceLabel?: string;
+  treeShadePct: number;
+  mappedTreeCount: number;
   label: "상대적으로 쾌적" | "활동 가능성 높음" | "주의 필요" | "시간 조정 권장";
   reasons: string[];
   heatSamples: HeatSample[];
@@ -73,6 +87,7 @@ export type PlaySafeSnapshot = {
     };
   };
   buildings: PlaySafeBuildingCollection;
+  trees: PlaySafeTree[];
   methodology: {
     scope: string;
     note: string;
@@ -168,6 +183,44 @@ function buildingShadows(
   return shadows;
 }
 
+function treeShadows(
+  origin: GeoPoint,
+  trees: PlaySafeTree[],
+  localDateTime: string,
+): LocalShadow[] {
+  const solar = solarPosition(origin, localDateTime, 540);
+  if (!solar.isDaylight || solar.elevationDeg <= 1) return [];
+  const elevation = (solar.elevationDeg * Math.PI) / 180;
+  const azimuth = (solar.azimuthDeg * Math.PI) / 180;
+  const shadows: LocalShadow[] = [];
+
+  for (const tree of trees) {
+    const local = geoPointToLocal(origin, tree.point);
+    if (Math.hypot(local.xM, local.yM) > 90) continue;
+    const lengthM = tree.heightM / Math.tan(elevation);
+    if (!Number.isFinite(lengthM) || lengthM <= 0) continue;
+    const shift = {
+      xM: -Math.sin(azimuth) * lengthM,
+      yM: -Math.cos(azimuth) * lengthM,
+    };
+    const base: LocalPoint[] = [];
+    const shifted: LocalPoint[] = [];
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (index / 8) * Math.PI * 2;
+      const point = {
+        xM: local.xM + Math.cos(angle) * tree.crownRadiusM,
+        yM: local.yM + Math.sin(angle) * tree.crownRadiusM,
+      };
+      base.push(point);
+      shifted.push({ xM: point.xM + shift.xM, yM: point.yM + shift.yM });
+    }
+    const hull = convexHull([...base, ...shifted]);
+    if (hull.length >= 3) shadows.push(hull);
+  }
+
+  return shadows;
+}
+
 function sampleLocalPoints(radiusM = 24) {
   const points: LocalPoint[] = [{ xM: 0, yM: 0 }];
   for (const radius of [radiusM * 0.45, radiusM]) {
@@ -177,6 +230,44 @@ function sampleLocalPoints(radiusM = 24) {
     }
   }
   return points;
+}
+
+function samplePlacePoints(place: PlayPlace) {
+  if (!place.boundary || place.boundary.length < 3) return sampleLocalPoints();
+  const polygon = place.boundary.map((point) => geoPointToLocal(place.point, point));
+  const xs = polygon.map((point) => point.xM);
+  const ys = polygon.map((point) => point.yM);
+  const minX = Math.max(-60, Math.min(...xs));
+  const maxX = Math.min(60, Math.max(...xs));
+  const minY = Math.max(-60, Math.min(...ys));
+  const maxY = Math.min(60, Math.max(...ys));
+  const span = Math.max(maxX - minX, maxY - minY);
+  const step = clamp(span / 6, 7, 16);
+  const samples: LocalPoint[] = [];
+
+  for (let xM = minX; xM <= maxX; xM += step) {
+    for (let yM = minY; yM <= maxY; yM += step) {
+      const point = { xM, yM };
+      if (pointInPolygon(point, polygon)) samples.push(point);
+      if (samples.length >= 36) return samples;
+    }
+  }
+
+  return samples.length >= 5 ? samples : sampleLocalPoints();
+}
+
+function surfaceHeat(place: PlayPlace) {
+  const surface = String(place.tags.surface || "").toLowerCase();
+  const label = surface || undefined;
+  const high = new Set(["asphalt", "concrete", "paving_stones", "rubber", "urethane", "tartan", "artificial_turf"]);
+  const low = new Set(["grass", "sand", "woodchips", "wood", "earth", "ground"]);
+  const medium = new Set(["paved", "gravel", "fine_gravel", "compacted", "sett", "cobblestone"]);
+
+  if (!surface) return { signal: "정보 없음" as const, load: 0, label };
+  if (high.has(surface)) return { signal: "높음" as const, load: 58, label };
+  if (low.has(surface)) return { signal: "낮음" as const, load: 8, label };
+  if (medium.has(surface)) return { signal: "보통" as const, load: 30, label };
+  return { signal: "정보 없음" as const, load: 0, label };
 }
 
 function labelForFit(fitScore: number): PlaySafeAssessment["label"] {
@@ -196,21 +287,31 @@ function weatherExposure(weather: PlaySafeWeather) {
 function assessAtTime(
   place: PlayPlace,
   buildings: PlaySafeBuildingCollection,
+  trees: PlaySafeTree[],
   weather: PlaySafeWeather,
   childAge: number,
   activityMinutes: number,
 ) {
   const solar = solarPosition(place.point, weather.localDateTime, 540);
-  const shadows = buildingShadows(place.point, buildings, weather.localDateTime);
-  const samples = sampleLocalPoints();
+  const buildingShadowPolygons = buildingShadows(place.point, buildings, weather.localDateTime);
+  const treeShadowPolygons = treeShadows(place.point, trees, weather.localDateTime);
+  const samples = samplePlacePoints(place);
   const cloudFactor = clamp(1 - weather.cloudCoverPct / 130, 0.25, 1);
   const daylightStrength = solar.isDaylight ? clamp(solar.elevationDeg / 55, 0.15, 1) * cloudFactor : 0;
   const baseWeatherExposure = weatherExposure(weather);
   let shadedCount = 0;
+  let treeShadedCount = 0;
+  const mappedTreeCount = trees.filter((tree) => {
+    const local = geoPointToLocal(place.point, tree.point);
+    return Math.hypot(local.xM, local.yM) <= 90;
+  }).length;
 
   const heatSamples = samples.map((local) => {
-    const shaded = !solar.isDaylight || shadows.some((shadow) => pointInPolygon(local, shadow));
+    const buildingShaded = buildingShadowPolygons.some((shadow) => pointInPolygon(local, shadow));
+    const treeShaded = treeShadowPolygons.some((shadow) => pointInPolygon(local, shadow));
+    const shaded = !solar.isDaylight || buildingShaded || treeShaded;
     if (shaded) shadedCount += 1;
+    if (treeShaded) treeShadedCount += 1;
     const directSolarLoad = shaded ? 0 : 100 * daylightStrength;
     const exposurePct = clamp(baseWeatherExposure * 0.64 + directSolarLoad * 0.36, 0, 100);
     return {
@@ -221,20 +322,30 @@ function assessAtTime(
   });
 
   const shadePct = (shadedCount / Math.max(1, samples.length)) * 100;
+  const treeShadePct = (treeShadedCount / Math.max(1, samples.length)) * 100;
   const directSunPct = solar.isDaylight ? 100 - shadePct : 0;
   const durationLoad = clamp(((activityMinutes - 20) / 70) * 18, 0, 18);
   const directSolarExposure = directSunPct * daylightStrength;
+  const uvLoad = clamp((weather.uvIndex / 8) * 100, 0, 100);
+  const surface = surfaceHeat(place);
   const exposureScore = clamp(
-    baseWeatherExposure * 0.58 + directSolarExposure * 0.34 + durationLoad,
+    baseWeatherExposure * 0.52
+      + directSolarExposure * 0.28
+      + uvLoad * 0.08
+      + surface.load * daylightStrength * 0.07
+      + durationLoad,
     0,
     100,
   );
   const fitScore = 100 - exposureScore;
   const reasons = [
     `체감온도 ${weather.apparentTemperatureC.toFixed(1)}°C`,
-    `예상 건물 그늘 ${shadePct.toFixed(0)}%`,
+    `UV ${weather.uvIndex.toFixed(1)}`,
+    `예상 그늘 ${shadePct.toFixed(0)}%`,
     `${activityMinutes}분 활동 기준`,
   ];
+  if (surface.label) reasons.push(`표면 ${surface.label} · 열축적 신호 ${surface.signal}`);
+  if (mappedTreeCount > 0) reasons.push(`OSM 수목 ${mappedTreeCount}그루 · 추정 수목 그늘 ${treeShadePct.toFixed(0)}%`);
   if (weather.precipitationMm > 0) reasons.push(`강수 ${weather.precipitationMm.toFixed(1)}mm/h`);
   if (childAge <= 6) reasons.push("어린 연령 프로필 · 보수적 설명 모드");
 
@@ -243,6 +354,11 @@ function assessAtTime(
     directSunPct,
     exposureScore,
     fitScore,
+    uvIndex: weather.uvIndex,
+    surfaceHeatSignal: surface.signal,
+    surfaceLabel: surface.label,
+    treeShadePct,
+    mappedTreeCount,
     label: labelForFit(fitScore),
     reasons,
     heatSamples,
@@ -252,19 +368,21 @@ function assessAtTime(
 export function assessPlayPlace(
   place: PlayPlace,
   buildings: PlaySafeBuildingCollection,
+  trees: PlaySafeTree[],
   weather: PlaySafeWeather,
   childAge: number,
   activityMinutes: number,
   timelineWeather: PlaySafeWeather[] = [],
 ): PlaySafeAssessment {
-  const now = assessAtTime(place, buildings, weather, childAge, activityMinutes);
+  const now = assessAtTime(place, buildings, trees, weather, childAge, activityMinutes);
   const timeline = timelineWeather.map((sample) => {
-    const assessment = assessAtTime(place, buildings, sample, childAge, activityMinutes);
+    const assessment = assessAtTime(place, buildings, trees, sample, childAge, activityMinutes);
     return {
       localDateTime: sample.localDateTime,
       fitScore: assessment.fitScore,
       shadePct: assessment.shadePct,
       apparentTemperatureC: sample.apparentTemperatureC,
+      uvIndex: sample.uvIndex,
       label: assessment.label,
     };
   });

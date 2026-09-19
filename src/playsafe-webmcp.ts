@@ -50,6 +50,42 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
   });
 
   register({
+    name: "assess_outdoor_window",
+    title: "Assess whether this is a relatively suitable outdoor window",
+    description: "Summarize the best currently loaded playground/park option and whether a later loaded hour would be relatively better. This is an environmental comparison, not a medical safety determination.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true },
+    execute: async () => {
+      const state = snapshot();
+      const best = state.assessments[0];
+      if (!best) return { status: "no-place-data", note: state.methodology.note };
+      const relativeStatus = best.fitScore >= 75
+        ? "favorable"
+        : best.fitScore >= 58
+          ? "possible"
+          : best.fitScore >= 38
+            ? "caution"
+            : "consider-later";
+      return {
+        relativeStatus,
+        bestPlace: {
+          id: best.place.id,
+          name: best.place.name,
+          fitScore: Math.round(best.fitScore),
+          label: best.label,
+          shadePct: Math.round(best.shadePct),
+          uvIndex: Number(best.uvIndex.toFixed(1)),
+          surfaceHeatSignal: best.surfaceHeatSignal,
+          mappedTreeCount: best.mappedTreeCount,
+        },
+        currentWeather: state.weather,
+        betterTime: state.recommendation?.betterTime,
+        note: state.methodology.note,
+      };
+    },
+  });
+
+  register({
     name: "find_nearby_playgrounds",
     title: "List nearby playgrounds and parks",
     description: "List the currently loaded nearby playgrounds and parks ordered by relative outdoor activity fit.",
@@ -62,6 +98,9 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
       distanceM: Math.round(item.place.distanceM),
       fitScore: Math.round(item.fitScore),
       shadePct: Math.round(item.shadePct),
+      uvIndex: Number(item.uvIndex.toFixed(1)),
+      surfaceHeatSignal: item.surfaceHeatSignal,
+      mappedTreeCount: item.mappedTreeCount,
       label: item.label,
     })),
   });
@@ -93,7 +132,12 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
           fitScore: Math.round(item.fitScore),
           exposureScore: Math.round(item.exposureScore),
           shadePct: Math.round(item.shadePct),
+          treeShadePct: Math.round(item.treeShadePct),
           directSunPct: Math.round(item.directSunPct),
+          uvIndex: Number(item.uvIndex.toFixed(1)),
+          surfaceHeatSignal: item.surfaceHeatSignal,
+          surfaceLabel: item.surfaceLabel,
+          mappedTreeCount: item.mappedTreeCount,
           label: item.label,
           reasons: item.reasons,
         }));

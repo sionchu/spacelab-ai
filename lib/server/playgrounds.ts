@@ -1,5 +1,5 @@
 import type { Feature, FeatureCollection, Polygon } from "geojson";
-import type { PlayPlace } from "@/src/playsafe";
+import type { PlayPlace, PlaySafeTree } from "@/src/playsafe";
 
 const APP_USER_AGENT = "PlaySafe/0.1 (+https://github.com/sionchu/spacelab-ai)";
 
@@ -158,6 +158,7 @@ export async function playSafeMapContext(
 ): Promise<{
   places: PlayPlace[];
   buildings: FeatureCollection<Polygon>;
+  trees: PlaySafeTree[];
 }> {
   const url = new URL("https://api.openstreetmap.org/api/0.6/map");
   url.searchParams.set("bbox", bbox(lon, lat, radiusM));
@@ -203,12 +204,30 @@ export async function playSafeMapContext(
       name: displayName(way.tags, kind),
       kind,
       point: center,
+      boundary: points,
       distanceM: distanceM(lon, lat, center.lon, center.lat),
       tags: way.tags,
     });
   }
 
   const places = choosePlaces(placeItems, limit);
+  const trees: PlaySafeTree[] = [];
+  for (const node of parsed.nodes.values()) {
+    if (node.tags.natural !== "tree") continue;
+    const closeToCandidate = places.some((place) =>
+      distanceM(place.point.lon, place.point.lat, node.lon, node.lat) <= 100);
+    if (!closeToCandidate) continue;
+    const parsedHeight = numberFrom(node.tags.height);
+    const crownDiameter = numberFrom(node.tags.diameter_crown || node.tags["crown:diameter"]);
+    trees.push({
+      point: { lon: node.lon, lat: node.lat },
+      heightM: Number.isFinite(parsedHeight) && parsedHeight > 2 ? Math.min(30, parsedHeight) : 8,
+      crownRadiusM: Number.isFinite(crownDiameter) && crownDiameter > 1
+        ? Math.min(10, Math.max(1.5, crownDiameter / 2))
+        : 3.5,
+    });
+  }
+
   const features: Array<Feature<Polygon>> = [];
 
   for (const way of parsed.ways) {
@@ -240,5 +259,6 @@ export async function playSafeMapContext(
   return {
     places,
     buildings: { type: "FeatureCollection", features },
+    trees,
   };
 }

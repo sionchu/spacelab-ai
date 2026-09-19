@@ -8,6 +8,15 @@ function defaultKstDateTime() {
   return shifted.toISOString().slice(0, 16);
 }
 
+function withSubjectParticle(value: string) {
+  const last = value.at(-1);
+  if (!last) return value;
+  const code = last.charCodeAt(0);
+  if (code < 0xac00 || code > 0xd7a3) return value + "이";
+  const hasFinalConsonant = (code - 0xac00) % 28 !== 0;
+  return value + (hasFinalConsonant ? "이" : "가");
+}
+
 export async function GET(request: NextRequest) {
   const lon = Number(request.nextUrl.searchParams.get("lon"));
   const lat = Number(request.nextUrl.searchParams.get("lat"));
@@ -24,13 +33,14 @@ export async function GET(request: NextRequest) {
       playSafeMapContext(lon, lat, 800, 4),
       playSafeWeather(lon, lat, requestedAt),
     ]);
-    const { places, buildings } = mapContext;
+    const { places, buildings, trees } = mapContext;
 
     const assessments = places
       .map((place) =>
         assessPlayPlace(
           place,
           buildings,
+          trees,
           weather.current,
           childAge,
           activityMinutes,
@@ -62,7 +72,7 @@ export async function GET(request: NextRequest) {
             placeName: best.place.name,
             fitScore: best.fitScore,
             label: best.label,
-            summary: `${best.place.name}이 현재 조건에서 상대적으로 가장 적합합니다. 예상 건물 그늘 ${best.shadePct.toFixed(0)}%, 체감온도 ${weather.current.apparentTemperatureC.toFixed(1)}°C 기준입니다.`,
+            summary: `${withSubjectParticle(best.place.name)} 현재 조건에서 상대적으로 가장 적합합니다. 예상 그늘 ${best.shadePct.toFixed(0)}%, UV ${weather.current.uvIndex.toFixed(1)}, 체감온도 ${weather.current.apparentTemperatureC.toFixed(1)}°C 기준입니다.`,
             betterTime: bestLater && bestLater.fitScore > best.fitScore + 5
               ? {
                   placeId: bestLater.placeId,
@@ -74,10 +84,11 @@ export async function GET(request: NextRequest) {
           }
         : undefined,
       buildings,
+      trees,
       methodology: {
         scope: "relative-outdoor-activity-fit",
         note: "의학적 안전 판정이 아닌 상대적 환경 노출 비교입니다.",
-        factors: ["apparent-temperature", "humidity", "precipitation", "solar-elevation", "building-shadow-sampling", "activity-duration"],
+        factors: ["apparent-temperature", "humidity", "precipitation", "uv-index", "solar-elevation", "building-shadow-sampling", "osm-tree-shadow-when-mapped", "play-area-boundary", "surface-heat-signal", "activity-duration"],
         playgroundSource: "OpenStreetMap",
         weatherSource: "Open-Meteo",
         buildingSource: buildings.features[0]?.properties?.source || "OpenStreetMap",

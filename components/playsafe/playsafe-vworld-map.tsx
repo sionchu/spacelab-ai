@@ -214,6 +214,20 @@ export function PlaySafeVWorldMap({
 
       clearPlaySafeEntities(viewer);
 
+      snapshot.trees.slice(0, 80).forEach((tree, index) => {
+        viewer.entities.add({
+          id: "playsafe:tree:" + index,
+          position: Cesium.Cartesian3.fromDegrees(tree.point.lon, tree.point.lat, 2),
+          point: {
+            pixelSize: 5,
+            color: Cesium.Color.fromCssColorString("#55c77a").withAlpha(0.8),
+            outlineColor: Cesium.Color.fromCssColorString("#d6f5dc").withAlpha(0.75),
+            outlineWidth: 1,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      });
+
       for (const assessment of snapshot.assessments) {
         const selected = assessment.place.id === selectedPlaceId;
         viewer.entities.add({
@@ -251,6 +265,20 @@ export function PlaySafeVWorldMap({
       const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
         ?? snapshot.assessments[0];
       if (!selected) return;
+
+      if (selected.place.boundary && selected.place.boundary.length >= 3) {
+        const coordinates = selected.place.boundary.flatMap((point) => [point.lon, point.lat]);
+        viewer.entities.add({
+          id: "playsafe:selected-boundary",
+          polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(coordinates),
+            material: fitColor(Cesium, selected.fitScore).withAlpha(0.10),
+            outline: true,
+            outlineColor: fitColor(Cesium, selected.fitScore).withAlpha(0.92),
+            height: 1.0,
+          },
+        });
+      }
 
       selected.heatSamples.forEach((sample, index) => {
         const color = exposureColor(Cesium, sample.exposurePct);
@@ -326,7 +354,7 @@ export function PlaySafeVWorldMap({
           {snapshot.weather.apparentTemperatureC.toFixed(1)}°C 체감
         </div>
         <div className="text-[9px] text-[#92a0ab]">
-          기온 {snapshot.weather.temperatureC.toFixed(1)}° · 습도 {snapshot.weather.relativeHumidityPct.toFixed(0)}%
+          기온 {snapshot.weather.temperatureC.toFixed(1)}° · 습도 {snapshot.weather.relativeHumidityPct.toFixed(0)}% · UV {snapshot.weather.uvIndex.toFixed(1)}
         </div>
       </div>
     </div>

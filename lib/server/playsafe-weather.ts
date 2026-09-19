@@ -9,6 +9,7 @@ type OpenMeteoPayload = {
     cloud_cover?: number[];
     precipitation?: number[];
     wind_speed_10m?: number[];
+    uv_index?: number[];
   };
 };
 
@@ -45,6 +46,7 @@ function readWeather(payload: OpenMeteoPayload, index: number): PlaySafeWeather 
     cloudCoverPct: numberAt(hourly.cloud_cover),
     precipitationMm: numberAt(hourly.precipitation),
     windSpeedKph: numberAt(hourly.wind_speed_10m),
+    uvIndex: numberAt(hourly.uv_index),
   };
 }
 
@@ -67,6 +69,7 @@ export async function playSafeWeather(
       "cloud_cover",
       "precipitation",
       "wind_speed_10m",
+      "uv_index",
     ].join(","),
   );
 

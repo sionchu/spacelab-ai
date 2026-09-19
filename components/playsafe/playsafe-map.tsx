@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import { featureCollection, point } from "@turf/turf";
+import { featureCollection, point, polygon } from "@turf/turf";
 import type { Feature, Point } from "geojson";
 import type { PlaySafeSnapshot } from "@/src/playsafe";
 
@@ -74,6 +74,23 @@ export function PlaySafeMap({
       },
     )),
   ), [snapshot.assessments]);
+
+  const treesGeoJson = useMemo(() => featureCollection(
+    snapshot.trees.map((tree, index) => point(
+      [tree.point.lon, tree.point.lat],
+      { id: index, heightM: tree.heightM, crownRadiusM: tree.crownRadiusM },
+    )),
+  ), [snapshot.trees]);
+
+  const selectedBoundaryGeoJson = useMemo(() => {
+    const boundary = selected?.place.boundary;
+    if (!boundary || boundary.length < 3) return featureCollection([]);
+    const ring = boundary.map((item) => [item.lon, item.lat]);
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
+    return featureCollection([polygon([ring], { id: selected.place.id })]);
+  }, [selected]);
 
   const heatGeoJson = useMemo(() => featureCollection(
     (selected?.heatSamples ?? []).map((sample, index) => point(
@@ -148,6 +165,41 @@ export function PlaySafeMap({
           "fill-extrusion-base": 0,
           "fill-extrusion-opacity": 0.62,
           "fill-extrusion-vertical-gradient": true,
+        },
+      });
+
+      map.addSource("playsafe-trees", { type: "geojson", data: treesGeoJson });
+      map.addLayer({
+        id: "playsafe-trees",
+        type: "circle",
+        source: "playsafe-trees",
+        paint: {
+          "circle-radius": 3.5,
+          "circle-color": "#55c77a",
+          "circle-opacity": 0.82,
+          "circle-stroke-width": 1,
+          "circle-stroke-color": "#d6f5dc",
+        },
+      });
+
+      map.addSource("selected-place-boundary", { type: "geojson", data: selectedBoundaryGeoJson });
+      map.addLayer({
+        id: "selected-place-boundary-fill",
+        type: "fill",
+        source: "selected-place-boundary",
+        paint: {
+          "fill-color": "#53d6c7",
+          "fill-opacity": 0.10,
+        },
+      });
+      map.addLayer({
+        id: "selected-place-boundary-line",
+        type: "line",
+        source: "selected-place-boundary",
+        paint: {
+          "line-color": "#77e6d8",
+          "line-width": 2.5,
+          "line-opacity": 0.9,
         },
       });
 
@@ -257,9 +309,11 @@ export function PlaySafeMap({
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
     setGeoJson(map, "context-buildings", snapshot.buildings);
+    setGeoJson(map, "playsafe-trees", treesGeoJson);
+    setGeoJson(map, "selected-place-boundary", selectedBoundaryGeoJson);
     setGeoJson(map, "playsafe-places", placesGeoJson);
     setGeoJson(map, "heat-samples", heatGeoJson);
-  }, [heatGeoJson, mapReady, placesGeoJson, snapshot.buildings]);
+  }, [heatGeoJson, mapReady, placesGeoJson, selectedBoundaryGeoJson, snapshot.buildings, treesGeoJson]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -303,7 +357,7 @@ export function PlaySafeMap({
           {snapshot.weather.apparentTemperatureC.toFixed(1)}°C 체감
         </div>
         <div className="text-[9px] text-[#92a0ab]">
-          기온 {snapshot.weather.temperatureC.toFixed(1)}° · 습도 {snapshot.weather.relativeHumidityPct.toFixed(0)}%
+          기온 {snapshot.weather.temperatureC.toFixed(1)}° · 습도 {snapshot.weather.relativeHumidityPct.toFixed(0)}% · UV {snapshot.weather.uvIndex.toFixed(1)}
         </div>
       </div>
     </div>
