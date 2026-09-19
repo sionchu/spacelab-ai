@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bbox } from "@turf/turf";
 import type { FeatureCollection, Polygon } from "geojson";
-import maplibregl, {
-  type GeoJSONSource,
-  type Map as MapLibreMap,
-  type StyleSpecification,
+import * as maplibregl from "maplibre-gl";
+import type {
+  GeoJSONSource,
+  Map as MapLibreMap,
+  MapMouseEvent,
+  StyleSpecification,
 } from "maplibre-gl";
 import { scenarioGeoJson, shadowGeoJson, siteGeoJson } from "@/lib/geojson";
 import type { SunState } from "@/lib/sun";
@@ -212,7 +214,7 @@ export function SpatialMap({
       setReady(true);
     });
 
-    map.on("click", (event) => {
+    map.on("click", (event: MapMouseEvent) => {
       onMapClickRef.current({ lon: event.lngLat.lng, lat: event.lngLat.lat });
     });
 
