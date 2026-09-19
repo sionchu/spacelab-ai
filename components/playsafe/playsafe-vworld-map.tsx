@@ -115,6 +115,8 @@ export function PlaySafeVWorldMap({
 
   useEffect(() => {
     let disposed = false;
+    let viewerPollId: number | undefined;
+    let viewerReady = false;
 
     void loadVWorldScript()
       .then(() => {
@@ -141,15 +143,14 @@ export function PlaySafeVWorldMap({
         map.setLogoVisible?.(true);
         map.setNavigationZoomVisible?.(false);
 
-        vw.ws3dInitCallBack = () => {
-          if (disposed) return;
+        const setupViewer = () => {
+          if (disposed || viewerReady) return false;
           const readyRuntime = window as VWorldWindow;
           const viewer = readyRuntime.ws3d?.viewer;
           const Cesium = readyRuntime.Cesium;
-          if (!viewer || !Cesium) {
-            onUnavailable("VWorld viewer unavailable");
-            return;
-          }
+          if (!viewer || !Cesium) return false;
+
+          viewerReady = true;
           viewerRef.current = viewer;
           mapRef.current = map;
           readyRef.current = true;
@@ -177,9 +178,31 @@ export function PlaySafeVWorldMap({
           clickHandlerRef.current = handler;
 
           window.dispatchEvent(new CustomEvent("playsafe-vworld-ready"));
+          return true;
+        };
+
+        vw.ws3dInitCallBack = () => {
+          setupViewer();
         };
 
         map.start();
+
+        viewerPollId = window.setInterval(() => {
+          if (setupViewer() && viewerPollId !== undefined) {
+            window.clearInterval(viewerPollId);
+            viewerPollId = undefined;
+          }
+        }, 120);
+
+        window.setTimeout(() => {
+          if (!disposed && !viewerReady) {
+            onUnavailable("VWorld viewer unavailable");
+          }
+          if (viewerPollId !== undefined) {
+            window.clearInterval(viewerPollId);
+            viewerPollId = undefined;
+          }
+        }, 8_000);
       })
       .catch((error) => {
         if (!disposed) onUnavailable(error instanceof Error ? error.message : String(error));
@@ -187,6 +210,9 @@ export function PlaySafeVWorldMap({
 
     return () => {
       disposed = true;
+      if (viewerPollId !== undefined) {
+        window.clearInterval(viewerPollId);
+      }
       readyRef.current = false;
       try {
         clickHandlerRef.current?.destroy?.();
