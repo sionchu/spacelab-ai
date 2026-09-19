@@ -20,7 +20,7 @@ import type { GeoPoint, Site } from "@/src/types";
 import { viewImpact } from "@/src/view-impact";
 import { registerSpaceLabTools } from "@/src/webmcp";
 import type { BuildingContextCollection, ViewImpactResult } from "@/src/view-impact";
-import { solarPositionAt, timeFromMinutes } from "@/lib/solar/sun";
+import { localDateTimeToday, minutesFromTime, solarPositionAt, timeFromMinutes } from "@/lib/solar/sun";
 
 type Mode = "inspect" | "pick-site" | "move-mass" | "viewpoint";
 
@@ -67,8 +67,9 @@ export function WorkspaceClient() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
-  const [minutes, setMinutes] = useState(900);
-  const [date, setDate] = useState("2026-09-19");
+  const [previewAnalysisTime, setPreviewAnalysisTime] = useState(
+    () => localDateTimeToday(900, state.timeZoneOffsetMinutes),
+  );
   const [panel, setPanel] = useState<"site" | "building" | "analysis" | "scenario">("site");
   const [contextBuildings, setContextBuildings] = useState<BuildingContextCollection>(emptyContextBuildings);
   const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
@@ -87,6 +88,9 @@ export function WorkspaceClient() {
 
   const active = state.activeScenarioId ? getScenario(state, state.activeScenarioId) : undefined;
   const compare = state.compareScenarioId ? getScenario(state, state.compareScenarioId) : undefined;
+  const analysisTime = active?.analysisTime ?? previewAnalysisTime;
+  const date = analysisTime.slice(0, 10);
+  const minutes = minutesFromTime(analysisTime.slice(11, 16));
   const sun = solarPositionAt(date, minutes, state.site.center.lat, state.site.center.lon);
   const viewImpactResults = useMemo(() => {
     if (!state.viewpoint || !active || !contextBuildings.features.length) return {} as Record<string, ViewImpactResult>;
@@ -97,7 +101,7 @@ export function WorkspaceClient() {
     return results;
   }, [active, compare, contextBuildings, state.site, state.viewpoint]);
   const shadow = active
-    ? computeShadowPolygon(active.mass, state.site.center, date + "T" + timeFromMinutes(minutes), 540)
+    ? computeShadowPolygon(active.mass, state.site.center, analysisTime, state.timeZoneOffsetMinutes)
     : undefined;
 
   useEffect(() => {
@@ -192,6 +196,20 @@ export function WorkspaceClient() {
     actions.editBuildingMass(active.id, { [key]: value }, "human");
   }
 
+  function setAnalysisTime(value: string) {
+    if (active) actions.setShadowTime(active.id, value, "human");
+    else setPreviewAnalysisTime(value);
+  }
+
+  function setAnalysisMinutes(value: number) {
+    setAnalysisTime(date + "T" + timeFromMinutes(value));
+  }
+
+  function setAnalysisDate(value: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return;
+    setAnalysisTime(value + "T" + timeFromMinutes(minutes));
+  }
+
   const navItems = [
     { key: "site" as const, label: "부지", icon: MapPin },
     { key: "building" as const, label: "건물", icon: Building2 },
@@ -223,8 +241,7 @@ export function WorkspaceClient() {
           site={state.site}
           active={active}
           compare={compare}
-          date={date}
-          minutes={minutes}
+          analysisTime={analysisTime}
           mode={mode}
           contextBuildings={contextBuildings}
           contextSource={contextSource}
@@ -293,14 +310,14 @@ export function WorkspaceClient() {
           </div>
           <div className="mt-3 grid grid-cols-[42px_1fr_42px] items-center gap-2 text-[9px] text-[#8b98a3]">
             <span>09:00</span>
-            <Slider value={[minutes]} min={540} max={1080} step={15} onValueChange={(value) => setMinutes(value[0] ?? 900)} />
+            <Slider value={[minutes]} min={540} max={1080} step={15} onValueChange={(value) => setAnalysisMinutes(value[0] ?? minutes)} />
             <span className="text-right">18:00</span>
           </div>
           <input
             className="mt-2 w-[126px] rounded-lg border border-white/8 bg-[#0e151b] px-2 py-1 text-[10px] text-white"
             type="date"
             value={date}
-            onChange={(event) => setDate(event.target.value)}
+            onChange={(event) => setAnalysisDate(event.target.value)}
           />
         </section>
 

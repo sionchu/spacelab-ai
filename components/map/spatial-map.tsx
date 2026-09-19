@@ -8,7 +8,7 @@ import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson"
 import { computeShadowPolygon } from "@/src/model";
 import type { GeoPoint, Scenario, Site, Viewpoint } from "@/src/types";
 import { scenarioFeature, shadowFeature, siteGeoJson } from "@/lib/spatial/geojson";
-import { solarPositionAt } from "@/lib/solar/sun";
+import { minutesFromTime, solarPositionAt } from "@/lib/solar/sun";
 import type { ConceptCameraState } from "@/src/concept-view";
 
 type InteractionMode = "inspect" | "pick-site" | "move-mass" | "viewpoint";
@@ -94,8 +94,7 @@ export function SpatialMap({
   site,
   active,
   compare,
-  date,
-  minutes,
+  analysisTime,
   mode,
   contextBuildings,
   contextSource,
@@ -108,8 +107,7 @@ export function SpatialMap({
   site: Site;
   active?: Scenario;
   compare?: Scenario;
-  date: string;
-  minutes: number;
+  analysisTime: string;
   mode: InteractionMode;
   contextBuildings: FeatureCollection<Polygon | MultiPolygon>;
   contextSource: string;
@@ -136,10 +134,10 @@ export function SpatialMap({
 
   const scene = useMemo(() => {
     const activeShadow = active
-      ? computeShadowPolygon(active.mass, site.center, date + "T" + String(Math.floor(minutes / 60)).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0"), 540)
+      ? computeShadowPolygon(active.mass, site.center, analysisTime, 540)
       : undefined;
     const compareShadow = compare
-      ? computeShadowPolygon(compare.mass, site.center, date + "T" + String(Math.floor(minutes / 60)).padStart(2, "0") + ":" + String(minutes % 60).padStart(2, "0"), 540)
+      ? computeShadowPolygon(compare.mass, site.center, analysisTime, 540)
       : undefined;
 
     const buildingFeatures: Feature[] = [];
@@ -160,7 +158,7 @@ export function SpatialMap({
         ? featureCollection([point([viewpoint.point.lon, viewpoint.point.lat], { kind: "viewpoint" })])
         : featureCollection([]),
     };
-  }, [active, compare, date, minutes, site, viewpoint]);
+  }, [active, analysisTime, compare, site, viewpoint]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -338,6 +336,8 @@ export function SpatialMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
+    const date = analysisTime.slice(0, 10);
+    const minutes = minutesFromTime(analysisTime.slice(11, 16));
     const sun = solarPositionAt(date, minutes, site.center.lat, site.center.lon);
     const polar = Math.max(5, Math.min(100, 90 - sun.altitudeDeg));
     map.setLight({
@@ -349,7 +349,7 @@ export function SpatialMap({
     if (map.getLayer("terrain-hillshade")) {
       map.setPaintProperty("terrain-hillshade", "hillshade-illumination-direction", sun.azimuthDeg);
     }
-  }, [date, mapReady, minutes, site.center.lat, site.center.lon]);
+  }, [analysisTime, mapReady, site.center.lat, site.center.lon]);
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();
