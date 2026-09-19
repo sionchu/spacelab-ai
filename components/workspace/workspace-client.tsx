@@ -105,13 +105,8 @@ export function WorkspaceClient() {
     : undefined;
 
   useEffect(() => {
-    if (state.site.source === "demo") {
-      setContextBuildings(emptyContextBuildings);
-      setContextSource("건물 컨텍스트 없음");
-      return;
-    }
-
     const controller = new AbortController();
+    setContextSource("주변 3D 건물 불러오는 중…");
     const params = new URLSearchParams({
       lon: String(state.site.center.lon),
       lat: String(state.site.center.lat),
