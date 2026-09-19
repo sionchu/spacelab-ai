@@ -5,8 +5,8 @@
 - Railway project: `spacelab-mobile-preview`
 - Service: `spacelab-mobile-preview`
 - Public origin: `https://spacelab-mobile-preview-production.up.railway.app`
-- Deployed application commit: `78b4237a31e3e32235ba1b08fd0c91ec97794c56`
-- Deployment: `08ea9940-b797-44be-a2e3-831ed2c144ba`
+- Deployed application commit: `4208dbc46d2aa277272f853a7baed764cbf9ad00`
+- Deployment: `1961365c-0bb4-41fd-8b92-ebc70391d495`
 - Railway status: `SUCCESS`
 - Runtime: Next.js 16.3.3 via `npm start`
 
@@ -85,3 +85,19 @@ Static/type/build verification is complete. Final Site Tools discovery and repre
 ## Remaining acceptance item
 
 Run Site Tools discovery plus representative read/write calls in a supported ChatGPT desktop built-in browser. Do not merge the RE0 branch into `main` solely on the basis of a normal-browser check.
+
+
+## Codex browser pass 1
+
+The first Codex Aside Browser run found a production-only fallback defect after address search:
+
+- search: PASS
+- first-result selection: FAIL
+- `POST /api/vworld/parcel`: HTTP 500
+- error: `Maximum call stack size exceeded`
+
+Root cause was a recursive `manualSite()` fallback. It was fixed in `4208dbc46d2aa277272f853a7baed764cbf9ad00`, verified by CI and deployed successfully.
+
+Evidence: `docs/codex-aside-browser-acceptance-pass1-2026-09-19.md`
+
+The same browser host did not expose `document.modelContext`, so WebMCP discovery was blocked by host capability rather than by the SpaceLab tool-registration code.
