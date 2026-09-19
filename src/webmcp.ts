@@ -138,7 +138,7 @@ export function registerSpaceLabTools(bridge: SpaceLabWebMcpBridge) {
   register({
     name: "select_site",
     title: "Select a cadastral site",
-    description: "Resolve the cadastral parcel containing a Korean coordinate and make it the canonical SpaceLab site. Selecting a new site clears the previous design scenarios.",
+    description: "Resolve the cadastral parcel containing a Korean coordinate and make it the canonical SpaceLab site. If VWorld cadastral data is unavailable, SpaceLab returns a clearly marked manual-point fallback boundary instead. Selecting a new site clears the previous design scenarios.",
     inputSchema: {
       type: "object",
       properties: {
