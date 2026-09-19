@@ -257,8 +257,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <aside className="absolute bottom-[52px] left-4 top-[82px] z-20 w-[392px] overflow-y-auto rounded-[30px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[640px]:bottom-[52px] max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-auto max-[640px]:max-h-[68dvh] max-[640px]:w-auto">
-          <div className="p-5 max-[640px]:p-4">
+        <aside className="absolute left-4 top-[82px] z-20 w-[392px] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-134px)] overflow-hidden rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[480px]:left-2 max-[480px]:w-[calc(100vw-16px)]">
+          <div className="max-h-[calc(100dvh-134px)] overflow-y-auto overscroll-contain p-5 [scrollbar-gutter:stable] max-[480px]:p-4">
             <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
               <Search className="size-4 shrink-0 text-[#6f7f89]" />
               <input
@@ -323,24 +323,106 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               </section>
             )}
 
+            {snapshot?.publicContext && (
+              <details className="group mt-3 border-t border-white/[0.06] pt-3">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-1 text-left [&::-webkit-details-marker]:hidden">
+                  <div className="min-w-0">
+                    <strong className="block text-[12px] text-[#dfe7eb]">주변 어린이 안전·편의</strong>
+                    <span className="mt-0.5 block text-[10px] text-[#74828a]">
+                      보호구역 {snapshot.publicContext.summary.childZones}곳 · CCTV {snapshot.publicContext.summary.childZoneCctvCount}대 · 어린이 사고다발 {snapshot.publicContext.summary.childAccidentHotspots}곳
+                    </span>
+                  </div>
+                  <ChevronDown className="size-4 shrink-0 text-[#77858e] transition group-open:rotate-180" />
+                </summary>
+
+                <div className="mt-3 space-y-4">
+                  {snapshot.publicContext.childZones.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-bold text-[#d5b85f]">어린이보호구역</div>
+                      <div className="mt-1 divide-y divide-white/[0.05]">
+                        {snapshot.publicContext.childZones.slice(0, 3).map((zone) => (
+                          <div key={zone.id} className="py-2">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <strong className="min-w-0 truncate text-[11px]">{zone.name || zone.facilityType}</strong>
+                              <span className="shrink-0 text-[10px] text-[#83919a]">{zone.distanceM}m</span>
+                            </div>
+                            <div className="mt-0.5 truncate text-[10px] text-[#697982]">
+                              {zone.facilityType || "보호구역"} · CCTV {zone.cctvCount}대{zone.roadWidth ? " · 도로폭 " + zone.roadWidth : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {snapshot.publicContext.childAccidentHotspots.length > 0 && (
+                    <div>
+                      <div className="text-[11px] font-bold text-[#ef9d8b]">어린이 사고다발 참고지점</div>
+                      <div className="mt-1 divide-y divide-white/[0.05]">
+                        {snapshot.publicContext.childAccidentHotspots.slice(0, 3).map((spot) => (
+                          <div key={spot.id} className="py-2">
+                            <div className="flex items-baseline justify-between gap-3">
+                              <strong className="min-w-0 truncate text-[11px]">{spot.name}</strong>
+                              <span className="shrink-0 text-[10px] text-[#83919a]">{spot.distanceM}m</span>
+                            </div>
+                            <div className="mt-0.5 truncate text-[10px] text-[#697982]">
+                              {spot.year}년 {spot.accidentType} · 사고 {spot.occurrences}건 · 사상 {spot.casualties}명
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="text-[11px] font-bold text-[#72e2d3]">아이와 이용할 주변 시설</div>
+                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                      <div>
+                        <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.parks}</div>
+                        <div className="text-[10px] text-[#71808a]">공원</div>
+                      </div>
+                      <div>
+                        <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.childCenters}</div>
+                        <div className="text-[10px] text-[#71808a]">아동센터</div>
+                      </div>
+                      <div>
+                        <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.childFriendlyToilets}</div>
+                        <div className="text-[10px] text-[#71808a]">어린이 편의 화장실</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {snapshot.publicContext.toilets[0] && (
+                    <div className="text-[10px] leading-4 text-[#80909a]">
+                      가까운 어린이 편의 화장실 · {snapshot.publicContext.toilets[0].name} · {snapshot.publicContext.toilets[0].distanceM}m
+                    </div>
+                  )}
+
+                  <p className="text-[10px] leading-4 text-[#586871]">
+                    공공데이터포털 전국 표준데이터 스냅샷을 검색 위치 기준으로 잘라 표시합니다. 보호구역 정보는 실제 보행 경로 안전도 판정이 아니라 주변 안전 인프라 참고 정보입니다.
+                  </p>
+                </div>
+              </details>
+            )}
+
             {selected && snapshot && (
               <>
-                <section className="pt-6">
+                <section className="mt-4 border-t border-white/[0.06] pt-4">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#72e2d3]">
                         {selectedIsRecommended && <Sparkles className="size-3.5" />}
-                        {selectedIsRecommended ? "지금 추천" : `${selectedRank + 1}번째 후보`}
+                        {selectedIsRecommended ? "선택한 장소" : `${selectedRank + 1}번째 후보`}
                       </div>
-                      <h1 className="mt-1.5 break-keep text-[24px] font-black leading-[1.18] tracking-[-0.035em]">
+                      <h1 className="mt-1.5 break-keep text-[16px] font-bold leading-[1.3] tracking-[-0.02em]">
                         {selected.place.name}
                       </h1>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className={"text-[36px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)}>
+                      <div className={"text-[20px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)}>
                         {selected.fitScore.toFixed(0)}
                       </div>
-                      <div className="mt-1 text-[11px] font-medium text-[#77848d]">활동 적합도</div>
+                      <div className="mt-1 text-[10px] font-medium text-[#77848d]">적합도</div>
                     </div>
                   </div>
 

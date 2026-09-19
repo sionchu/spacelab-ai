@@ -78,6 +78,92 @@ export type PlaySafeAssessment = {
   heatSamples: HeatSample[];
   timeline: PlaySafeTimelinePoint[];
 };
+export type PlaySafePublicContext = {
+  generatedAt: string;
+  summary: {
+    parks: number;
+    childZones: number;
+    childZoneCctvCount: number;
+    childAccidentHotspots: number;
+    childCenters: number;
+    childFriendlyToilets: number;
+  };
+  parks: Array<{
+    id: string;
+    name: string;
+    address: string;
+    point: GeoPoint;
+    distanceM: number;
+    type: string;
+    areaM2: number;
+    amusement: string;
+    convenience: string;
+    exercise: string;
+    phone: string;
+    referenceDate: string;
+  }>;
+  childZones: Array<{
+    id: string;
+    name: string;
+    address: string;
+    point: GeoPoint;
+    distanceM: number;
+    facilityType: string;
+    cctv: string;
+    cctvCount: number;
+    active: string;
+    roadWidth: string;
+    referenceDate: string;
+  }>;
+  childAccidentHotspots: Array<{
+    id: string;
+    name: string;
+    point: GeoPoint;
+    distanceM: number;
+    accidentType: string;
+    year: string;
+    region: string;
+    occurrences: number;
+    casualties: number;
+    deaths: number;
+    seriousInjuries: number;
+    minorInjuries: number;
+    reportedInjuries: number;
+    referenceDate: string;
+  }>;
+  childCenters: Array<{
+    id: string;
+    name: string;
+    address: string;
+    point: GeoPoint;
+    distanceM: number;
+    phone: string;
+    capacity: number;
+    current: number;
+    operatorType: string;
+    referenceDate: string;
+  }>;
+  toilets: Array<{
+    id: string;
+    name: string;
+    address: string;
+    point: GeoPoint;
+    distanceM: number;
+    openTime: string;
+    childFixtures: number;
+    diaperChange: string;
+    emergencyBell: string;
+    referenceDate: string;
+  }>;
+  sources: {
+    parks: number;
+    childZones: number;
+    childAccidentHotspots: number;
+    childCenters: number;
+    toilets: number;
+  };
+};
+
 export type PlaySafeSnapshot = {
   query: {
     center: GeoPoint;
@@ -102,6 +188,7 @@ export type PlaySafeSnapshot = {
   };
   buildings: PlaySafeBuildingCollection;
   trees: PlaySafeTree[];
+  publicContext?: PlaySafePublicContext;
   methodology: {
     scope: string;
     note: string;

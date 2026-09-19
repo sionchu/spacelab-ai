@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { playSafeMapContext } from "@/lib/server/playgrounds";
+import { playSafePublicContext } from "@/lib/server/playsafe-public-context";
 import { playSafeWeather } from "@/lib/server/playsafe-weather";
 import { reverseAddress } from "@/lib/vworld/server";
 import { assessPlayPlace } from "@/src/playsafe";
@@ -30,9 +31,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const [mapContext, weather] = await Promise.all([
+    const [mapContext, weather, publicContext] = await Promise.all([
       playSafeMapContext(lon, lat, 800, 4),
       playSafeWeather(lon, lat, requestedAt),
+      playSafePublicContext({ lon, lat }),
     ]);
     const { places, buildings, trees } = mapContext;
     const placesWithAddresses = await Promise.all(
@@ -97,6 +99,7 @@ export async function GET(request: NextRequest) {
         : undefined,
       buildings,
       trees,
+      publicContext,
       methodology: {
         scope: "relative-outdoor-activity-fit",
         note: "의학적 안전 판정이 아닌 상대적 환경 노출 비교입니다. 나이는 어린 아이일수록 같은 환경을 더 보수적으로 해석하는 제품 비교 휴리스틱에만 사용됩니다.",
