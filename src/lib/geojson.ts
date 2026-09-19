@@ -1,6 +1,6 @@
-import type { Feature, FeatureCollection, Polygon } from "geojson";
+import type { Feature, FeatureCollection, Geometry, LineString, Point, Polygon } from "geojson";
 import { computeShadowPolygon, localPointToGeo, rotatedFootprintPoints } from "@/model";
-import type { Scenario, Site } from "@/types";
+import type { LocalPoint, Scenario, Site } from "@/types";
 
 function closeRing(coordinates: number[][]) {
   if (!coordinates.length) return coordinates;
@@ -85,5 +85,52 @@ export function shadowGeoJson(
       geometry: { type: "Polygon", coordinates: [ring] },
     });
   }
+  return { type: "FeatureCollection", features };
+}
+
+
+export function draftGeoJson(
+  site: Site,
+  points: LocalPoint[],
+): FeatureCollection<Geometry> {
+  const features: Array<Feature<Geometry>> = points.map((point, index) => {
+    const geo = localPointToGeo(site.center, point);
+    const feature: Feature<Point> = {
+      type: "Feature",
+      id: `draft-point-${index}`,
+      properties: { kind: "point", index },
+      geometry: { type: "Point", coordinates: [geo.lon, geo.lat] },
+    };
+    return feature;
+  });
+
+  if (points.length >= 2) {
+    const coordinates = points.map((point) => {
+      const geo = localPointToGeo(site.center, point);
+      return [geo.lon, geo.lat];
+    });
+    const line: Feature<LineString> = {
+      type: "Feature",
+      id: "draft-line",
+      properties: { kind: "line" },
+      geometry: { type: "LineString", coordinates },
+    };
+    features.push(line);
+  }
+
+  if (points.length >= 3) {
+    const coordinates = closeRing(points.map((point) => {
+      const geo = localPointToGeo(site.center, point);
+      return [geo.lon, geo.lat];
+    }));
+    const polygon: Feature<Polygon> = {
+      type: "Feature",
+      id: "draft-polygon",
+      properties: { kind: "polygon" },
+      geometry: { type: "Polygon", coordinates: [coordinates] },
+    };
+    features.push(polygon);
+  }
+
   return { type: "FeatureCollection", features };
 }
