@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+import { MapLibreOverlay } from "@deck.gl/maplibre";
 import type { GeoJSONSource, Map as MapLibreMap, MapMouseEvent, StyleSpecification } from "maplibre-gl";
 import { bbox, featureCollection, point } from "@turf/turf";
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from "geojson";
@@ -10,6 +11,8 @@ import type { GeoPoint, Scenario, Site, Viewpoint } from "@/src/types";
 import { scenarioFeature, shadowFeature, siteGeoJson } from "@/lib/spatial/geojson";
 import { minutesFromTime, solarPositionAt } from "@/lib/solar/sun";
 import type { ConceptCameraState } from "@/src/concept-view";
+import type { ViewImpactResult } from "@/src/view-impact";
+import { buildVisualizationLayers } from "@/components/map/visualization-layers";
 
 type InteractionMode = "inspect" | "pick-site" | "move-mass" | "viewpoint";
 
@@ -52,14 +55,18 @@ function setGeoJson(map: MapLibreMap, id: string, data: GeoJSON.GeoJSON) {
 }
 
 function fitSite(map: MapLibreMap, site: Site) {
+  if (site.source === "demo") {
+    map.easeTo({ center: [site.center.lon, site.center.lat], zoom: 15.65, pitch: 66, bearing: -26, duration: 1100 });
+    return;
+  }
   if (site.boundary.length < 3) {
-    map.easeTo({ center: [site.center.lon, site.center.lat], zoom: 16.6, pitch: 64, bearing: -24, duration: 700 });
+    map.easeTo({ center: [site.center.lon, site.center.lat], zoom: 16.2, pitch: 66, bearing: -26, duration: 1100 });
     return;
   }
   const extent = bbox(siteGeoJson(site));
   map.fitBounds(
     [[extent[0], extent[1]], [extent[2], extent[3]]],
-    { padding: 72, pitch: 64, bearing: -24, maxZoom: 17.2, duration: 700 },
+    { padding: 82, pitch: 66, bearing: -26, maxZoom: 16.8, duration: 1100 },
   );
 }
 
@@ -99,6 +106,7 @@ export function SpatialMap({
   contextBuildings,
   contextSource,
   viewpoint,
+  viewImpactResult,
   onPickSite,
   onMoveMass,
   onSetViewpoint,
@@ -112,6 +120,7 @@ export function SpatialMap({
   contextBuildings: FeatureCollection<Polygon | MultiPolygon>;
   contextSource: string;
   viewpoint?: Viewpoint;
+  viewImpactResult?: ViewImpactResult;
   onPickSite: (point: GeoPoint) => void;
   onMoveMass: (point: GeoPoint) => void;
   onSetViewpoint: (point: GeoPoint) => void;
@@ -119,6 +128,7 @@ export function SpatialMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const overlayRef = useRef<MapLibreOverlay | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const modeRef = useRef(mode);
   const onPickSiteRef = useRef(onPickSite);
@@ -131,6 +141,12 @@ export function SpatialMap({
   onMoveMassRef.current = onMoveMass;
   onSetViewpointRef.current = onSetViewpoint;
   onMapApiRef.current = onMapApi;
+
+  const solar = useMemo(() => {
+    const date = analysisTime.slice(0, 10);
+    const minutes = minutesFromTime(analysisTime.slice(11, 16));
+    return solarPositionAt(date, minutes, site.center.lat, site.center.lon);
+  }, [analysisTime, site.center.lat, site.center.lon]);
 
   const scene = useMemo(() => {
     const activeShadow = active
@@ -167,9 +183,9 @@ export function SpatialMap({
       container: containerRef.current,
       style: baseStyle,
       center: [site.center.lon, site.center.lat],
-      zoom: 16.2,
-      pitch: 64,
-      bearing: -24,
+      zoom: 15.65,
+      pitch: 66,
+      bearing: -26,
       maxPitch: 75,
       attributionControl: false,
       canvasContextAttributes: {
@@ -296,6 +312,13 @@ export function SpatialMap({
         },
       });
 
+      const visualizationOverlay = new MapLibreOverlay({
+        interleaved: false,
+        layers: [],
+      });
+      map.addControl(visualizationOverlay);
+      overlayRef.current = visualizationOverlay;
+
       fitSite(map, site);
       setMapReady(true);
       onMapApiRef.current?.({
@@ -314,6 +337,7 @@ export function SpatialMap({
     mapRef.current = map;
     return () => {
       onMapApiRef.current?.(null);
+      overlayRef.current = null;
       setMapReady(false);
       map.remove();
       mapRef.current = null;
@@ -342,22 +366,51 @@ export function SpatialMap({
   }, [contextBuildings, mapReady]);
 
   useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay || !mapReady) return;
+    overlay.setProps({
+      layers: buildVisualizationLayers({
+        site,
+        active,
+        viewpoint,
+        viewImpact: viewImpactResult,
+        sunAzimuthDeg: solar.azimuthDeg,
+      }),
+    });
+  }, [active, mapReady, site, solar.azimuthDeg, viewpoint, viewImpactResult]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded() || !map.getLayer("planned-buildings")) return;
+    const activeColor = !viewImpactResult?.supported
+      ? "#53d6c7"
+      : viewImpactResult.visibleRatioPct < 25
+        ? "#ef6868"
+        : viewImpactResult.visibleRatioPct < 75
+          ? "#d8ad58"
+          : "#53d6c7";
+    map.setPaintProperty("planned-buildings", "fill-extrusion-color", [
+      "case",
+      ["==", ["get", "kind"], "compare"],
+      "#7f9df4",
+      activeColor,
+    ]);
+  }, [mapReady, viewImpactResult]);
+
+  useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    const date = analysisTime.slice(0, 10);
-    const minutes = minutesFromTime(analysisTime.slice(11, 16));
-    const sun = solarPositionAt(date, minutes, site.center.lat, site.center.lon);
-    const polar = Math.max(5, Math.min(100, 90 - sun.altitudeDeg));
+    const polar = Math.max(5, Math.min(100, 90 - solar.altitudeDeg));
     map.setLight({
       anchor: "map",
-      color: sun.isDaylight ? "#fff9e8" : "#71819a",
-      intensity: sun.isDaylight ? 0.72 : 0.28,
-      position: [1.5, sun.azimuthDeg, polar],
+      color: solar.isDaylight ? "#fff9e8" : "#71819a",
+      intensity: solar.isDaylight ? 0.72 : 0.28,
+      position: [1.5, solar.azimuthDeg, polar],
     });
     if (map.getLayer("terrain-hillshade")) {
-      map.setPaintProperty("terrain-hillshade", "hillshade-illumination-direction", sun.azimuthDeg);
+      map.setPaintProperty("terrain-hillshade", "hillshade-illumination-direction", solar.azimuthDeg);
     }
-  }, [analysisTime, mapReady, site.center.lat, site.center.lon]);
+  }, [mapReady, solar]);
 
   useEffect(() => {
     const canvas = mapRef.current?.getCanvas();

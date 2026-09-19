@@ -241,6 +241,7 @@ export function WorkspaceClient() {
           contextBuildings={contextBuildings}
           contextSource={contextSource}
           viewpoint={state.viewpoint}
+          viewImpactResult={active ? viewImpactResults[active.id] : undefined}
           onPickSite={(point) => void selectParcel(point)}
           onMoveMass={moveActive}
           onSetViewpoint={setViewpoint}
