@@ -10,9 +10,9 @@ import type {
   MapMouseEvent,
   StyleSpecification,
 } from "maplibre-gl";
-import { scenarioGeoJson, shadowGeoJson, siteGeoJson } from "@/lib/geojson";
+import { draftGeoJson, scenarioGeoJson, shadowGeoJson, siteGeoJson } from "@/lib/geojson";
 import type { SunState } from "@/lib/sun";
-import type { GeoPoint, Scenario, Site } from "@/types";
+import type { GeoPoint, LocalPoint, Scenario, Site } from "@/types";
 
 const emptyBuildings: FeatureCollection<Polygon> = {
   type: "FeatureCollection",
@@ -86,7 +86,7 @@ function setData(map: MapLibreMap, id: string, data: FeatureCollection) {
   if (source) source.setData(data);
 }
 
-export type MapInteractionMode = "inspect" | "pick-site" | "move-mass";
+export type MapInteractionMode = "inspect" | "pick-site" | "move-mass" | "draw-polygon";
 
 export function SpatialMap({
   site,
@@ -94,6 +94,7 @@ export function SpatialMap({
   activeScenarioId,
   sun,
   interactionMode,
+  draftPoints,
   onMapClick,
 }: {
   site: Site;
@@ -101,6 +102,7 @@ export function SpatialMap({
   activeScenarioId?: string;
   sun: SunState;
   interactionMode: MapInteractionMode;
+  draftPoints: LocalPoint[];
   onMapClick: (point: GeoPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -120,6 +122,7 @@ export function SpatialMap({
     [activeScenarioId, scenarios, site],
   );
   const shadowData = useMemo(() => shadowGeoJson(site, scenarios), [scenarios, site]);
+  const draftData = useMemo(() => draftGeoJson(site, draftPoints), [draftPoints, site]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -187,6 +190,41 @@ export function SpatialMap({
         },
       });
 
+      map.addSource("spacelab-draft", { type: "geojson", data: draftData });
+      map.addLayer({
+        id: "spacelab-draft-fill",
+        type: "fill",
+        source: "spacelab-draft",
+        filter: ["==", ["geometry-type"], "Polygon"],
+        paint: {
+          "fill-color": "#f2c66d",
+          "fill-opacity": 0.14,
+        },
+      });
+      map.addLayer({
+        id: "spacelab-draft-line",
+        type: "line",
+        source: "spacelab-draft",
+        filter: ["in", ["geometry-type"], ["literal", ["LineString", "Polygon"]]],
+        paint: {
+          "line-color": "#f2c66d",
+          "line-width": 2.5,
+          "line-dasharray": [2, 1.3],
+        },
+      });
+      map.addLayer({
+        id: "spacelab-draft-points",
+        type: "circle",
+        source: "spacelab-draft",
+        filter: ["==", ["geometry-type"], "Point"],
+        paint: {
+          "circle-radius": 5,
+          "circle-color": "#f8d98e",
+          "circle-stroke-width": 2,
+          "circle-stroke-color": "#26313a",
+        },
+      });
+
       map.addSource("spacelab-mass", { type: "geojson", data: scenarioData });
       map.addLayer({
         id: "spacelab-mass",
@@ -230,13 +268,17 @@ export function SpatialMap({
     setData(mapRef.current, "spacelab-site", siteData);
     setData(mapRef.current, "spacelab-mass", scenarioData);
     setData(mapRef.current, "spacelab-shadow", shadowData);
+    setData(mapRef.current, "spacelab-draft", draftData);
+  }, [draftData, ready, scenarioData, shadowData, siteData]);
 
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
     const bounds = bbox(siteData);
     mapRef.current.fitBounds(
       [[bounds[0], bounds[1]], [bounds[2], bounds[3]]],
       { padding: 90, pitch: 58, bearing: -18, maxZoom: 18, duration: 650 },
     );
-  }, [ready, scenarioData, shadowData, site.id, siteData]);
+  }, [ready, site.id, siteData]);
 
   useEffect(() => {
     if (!ready || !mapRef.current) return;
