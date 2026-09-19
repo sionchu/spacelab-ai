@@ -126,6 +126,96 @@ function dedupeSearchResults(items: AddressSearchResult[]) {
   }).slice(0, 8);
 }
 
+const reverseAddressCache = new Map<string, string | undefined>();
+
+async function reverseNominatim(point: GeoPoint) {
+  const url = buildUrl("https://nominatim.openstreetmap.org/reverse", {
+    lat: point.lat,
+    lon: point.lon,
+    format: "jsonv2",
+    zoom: 18,
+    addressdetails: 1,
+    "accept-language": "ko",
+  });
+
+  return withNominatimRateLimit(async () => {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+        Referer: "https://github.com/sionchu/spacelab-ai",
+      },
+      signal: AbortSignal.timeout(10_000),
+      next: { revalidate: 2_592_000 },
+    });
+    if (!response.ok) return undefined;
+    const payload = await response.json() as Record<string, any>;
+    const address = payload.address ?? {};
+    const values = [
+      address.state,
+      address.city || address.county,
+      address.borough || address.city_district,
+      address.suburb || address.quarter || address.neighbourhood,
+      address.road || address.pedestrian,
+      address.house_number,
+    ].filter(Boolean).map((value: unknown) => String(value).trim());
+    const normalized = Array.from(new Set(values)).join(" ").trim();
+    if (normalized) return normalized;
+    const displayName = String(payload.display_name || "").split(",").slice(0, 6).join(" ").trim();
+    return displayName || undefined;
+  });
+}
+
+export async function reverseAddress(
+  point: GeoPoint,
+  options: { allowNominatim?: boolean } = {},
+): Promise<string | undefined> {
+  const cacheKey = point.lon.toFixed(6) + "," + point.lat.toFixed(6);
+  if (reverseAddressCache.has(cacheKey)) return reverseAddressCache.get(cacheKey);
+
+  const key = apiKey();
+  if (key) {
+    try {
+      const url = buildUrl("https://api.vworld.kr/req/address", {
+        service: "address",
+        request: "getaddress",
+        version: "2.0",
+        crs: "EPSG:4326",
+        type: "BOTH",
+        point: point.lon + "," + point.lat,
+        format: "json",
+        zipcode: "true",
+        simple: "false",
+        key,
+        domain: apiDomain(),
+      });
+      const payload = await requestJson(url);
+      const results = Array.isArray(payload?.response?.result) ? payload.response.result : [];
+      const road = results.find((item: any) => String(item?.type || "").toLowerCase() === "road");
+      const parcel = results.find((item: any) => String(item?.type || "").toLowerCase() === "parcel");
+      const address = String(road?.text || parcel?.text || results[0]?.text || "").trim() || undefined;
+      if (address) {
+        reverseAddressCache.set(cacheKey, address);
+        return address;
+      }
+    } catch (error) {
+      console.warn("[vworld] reverse fallback", error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  if (options.allowNominatim === false) return undefined;
+
+  try {
+    const address = await reverseNominatim(point);
+    reverseAddressCache.set(cacheKey, address);
+    return address;
+  } catch (error) {
+    console.warn("[nominatim] reverse failed", error instanceof Error ? error.message : String(error));
+    reverseAddressCache.set(cacheKey, undefined);
+    return undefined;
+  }
+}
+
 export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
