@@ -61,6 +61,35 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 - no generated Concept View image may feed back into analysis geometry
 - image generation remains user-triggered and may incur provider usage cost
 
+## Responsibility split
+
+### Codex Aside browser
+
+Browser-only acceptance is defined in `docs/codex-aside-browser-acceptance.md`.
+
+Codex owns:
+
+- rendered UI click-through
+- MapLibre visual interaction checks
+- `document.modelContext` / Site Tools discovery
+- representative WebMCP read/write calls against the live page
+
+Codex does not own Railway configuration, deployment bookkeeping, PR merge, or Concept View image generation.
+
+### ChatGPT project workflow
+
+This workflow owns:
+
+- repository audit and smallest-scope fixes
+- GitHub CI/type/build/diff verification
+- exact-commit Railway deployment
+- provider/runtime log diagnosis
+- public HTTP/API acceptance
+- canonical acceptance/HANDOFF/PR documentation
+- deciding the next technical action from Codex acceptance evidence
+
+Railway note: the staged SpaceLab source was corrected to the accepted runtime commit `78b4237a31e3e32235ba1b08fd0c91ec97794c56`. A separate staged deletion for the legacy `vworld-diagnostic` service remains because Railway does not expose an individual unstage action through the available API. It does not affect the current SpaceLab runtime unless the environment patch is explicitly applied.
+
 ## Next concrete action
 
-Runtime acceptance is recorded in `docs/re0-runtime-acceptance-2026-09-19.md`. The remaining gate is Site Tools discovery plus representative read/write analysis calls in a supported ChatGPT desktop built-in browser before replacing main.
+Run `docs/codex-aside-browser-acceptance.md` in the Codex Aside browser. Runtime/server acceptance is already recorded in `docs/re0-runtime-acceptance-2026-09-19.md`. Keep PR #15 draft until the Codex browser report is reviewed.
