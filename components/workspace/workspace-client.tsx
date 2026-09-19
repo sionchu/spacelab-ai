@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useReducer, useState } from "react";
+import { FormEvent, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Building2, Eye, Layers3, MapPin, Move, Search, SunMedium } from "lucide-react";
 import { SpatialMap } from "@/components/map/spatial-map";
 import type { SpatialMapApi } from "@/components/map/spatial-map";
@@ -18,6 +18,7 @@ import {
 } from "@/src/model";
 import type { GeoPoint, Site } from "@/src/types";
 import { viewImpact } from "@/src/view-impact";
+import { registerSpaceLabTools } from "@/src/webmcp";
 import type { BuildingContextCollection, ViewImpactResult } from "@/src/view-impact";
 import { solarPositionAt, timeFromMinutes } from "@/lib/solar/sun";
 
@@ -42,6 +43,24 @@ function viewImpactLabel(result?: ViewImpactResult) {
   return "대부분 가림";
 }
 
+async function searchSpaceLabAddress(query: string): Promise<SearchResult[]> {
+  const response = await fetch("/api/vworld/search?q=" + encodeURIComponent(query));
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.error || "주소 검색 실패");
+  return payload as SearchResult[];
+}
+
+async function resolveSpaceLabParcel(point: GeoPoint, label?: string): Promise<Site> {
+  const response = await fetch("/api/vworld/parcel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ point, label }),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload?.error || "필지 선택 실패");
+  return payload as Site;
+}
+
 export function WorkspaceClient() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const [mode, setMode] = useState<Mode>("inspect");
@@ -55,10 +74,15 @@ export function WorkspaceClient() {
   const [contextSource, setContextSource] = useState("건물 컨텍스트 없음");
   const [mapApi, setMapApi] = useState<SpatialMapApi | null>(null);
   const [conceptViewOpen, setConceptViewOpen] = useState(false);
+  const [webMcpSupported, setWebMcpSupported] = useState(false);
+  const stateRef = useRef(state);
+  const contextBuildingsRef = useRef(contextBuildings);
+  stateRef.current = state;
+  contextBuildingsRef.current = contextBuildings;
 
   const actions = useMemo(
-    () => createApplicationActions(dispatch, () => state),
-    [state],
+    () => createApplicationActions(dispatch, () => stateRef.current),
+    [],
   );
 
   const active = state.activeScenarioId ? getScenario(state, state.activeScenarioId) : undefined;
@@ -119,28 +143,31 @@ export function WorkspaceClient() {
     if (!query.trim()) return;
     setSearching(true);
     try {
-      const response = await fetch("/api/vworld/search?q=" + encodeURIComponent(query));
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "주소 검색 실패");
-      setResults(payload);
+      setResults(await searchSpaceLabAddress(query));
     } finally {
       setSearching(false);
     }
   }
 
   async function selectParcel(point: GeoPoint, label?: string) {
-    const response = await fetch("/api/vworld/parcel", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ point, label }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload?.error || "필지 선택 실패");
-    actions.setSite(payload as Site, "human");
+    const site = await resolveSpaceLabParcel(point, label);
+    actions.setSite(site, "human");
     setMode("inspect");
     setResults([]);
     if (label) setQuery(label);
   }
+
+  useEffect(() => {
+    const registration = registerSpaceLabTools({
+      actions,
+      getState: () => stateRef.current,
+      searchLocation: searchSpaceLabAddress,
+      selectSiteAtPoint: resolveSpaceLabParcel,
+      getBuildingContext: () => contextBuildingsRef.current,
+    });
+    setWebMcpSupported(registration.supported);
+    return registration.dispose;
+  }, [actions]);
 
   function setViewpoint(point: GeoPoint) {
     actions.setViewpoint({ point, eyeHeightM: state.viewpoint?.eyeHeightM ?? 1.7 }, "human");
@@ -179,8 +206,15 @@ export function WorkspaceClient() {
           <div className="text-[15px] font-extrabold tracking-[-0.03em]">SpaceLab</div>
           <div className="hidden text-[9px] text-[var(--muted-foreground)] md:block">부지 · 건물 · 일조 · 조망 검토</div>
         </div>
-        <div className="rounded-lg border border-white/8 bg-[#151f28] px-2.5 py-1.5 text-[10px] text-[#a8b3bd]">
-          MapLibre 3D
+        <div className="flex items-center gap-2">
+          {webMcpSupported && (
+            <div className="rounded-lg border border-[var(--primary)]/20 bg-[#13221f] px-2.5 py-1.5 text-[10px] text-[var(--primary)]">
+              Site Tools
+            </div>
+          )}
+          <div className="rounded-lg border border-white/8 bg-[#151f28] px-2.5 py-1.5 text-[10px] text-[#a8b3bd]">
+            MapLibre 3D
+          </div>
         </div>
       </header>
 
