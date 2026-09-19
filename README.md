@@ -61,11 +61,11 @@ MapLibre owns rendering and camera interaction only. It does not own scenario st
 
 - **VWorld**: Korean address search + cadastral parcel.
 - **DEM**: defaults to MapLibre demo terrain and is replaceable with `NEXT_PUBLIC_DEM_TILEJSON`.
-- **Nearby buildings**: first RE0 slice uses OpenStreetMap building footprints via a server route. This is explicitly temporary context, not the final Korean building source.
+- **Nearby buildings**: `SPACELAB_BUILDING_PROVIDER=auto` tries VWorld GIS building data first and falls back to OpenStreetMap building footprints. Both are normalized to the same GeoJSON contract. VWorld building-layer runtime compatibility still requires live-key acceptance.
 - **Planned geometry**: canonical SpaceLab state converted to GeoJSON.
 - **Solar state**: SunCalc is the single solar-position source used by lighting and shadow analysis.
 
-The next data adapter replaces the temporary OSM building context with VWorld / Ministry of Land GIS building integrated information without changing the MapLibre layers.
+The renderer is provider-agnostic: VWorld / Korean GIS building data and OSM fallback both feed the same MapLibre GeoJSON extrusion layer.
 
 ## Local setup
 
@@ -87,6 +87,7 @@ Optional:
 VWORLD_DOMAIN=localhost
 NEXT_PUBLIC_DEM_TILEJSON=https://demotiles.maplibre.org/terrain-tiles/tiles.json
 NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M=350
+SPACELAB_BUILDING_PROVIDER=auto
 ```
 
 Never commit `.env.local` or API keys.
