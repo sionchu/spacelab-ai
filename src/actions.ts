@@ -1,4 +1,5 @@
 import type { Dispatch } from "react";
+import { localDateTimeToday } from "../lib/solar/sun";
 import type {
   ApplicationActions,
   CreateMassInput,
@@ -29,7 +30,8 @@ export function createApplicationActions(
       dispatch({ type: "SET_SITE", site, source });
     },
     createBuildingMass: (input: CreateMassInput = {}, createdBy = "human") => {
-      dispatch({ type: "CREATE_SCENARIO", input, createdBy });
+      const analysisTime = input.analysisTime ?? localDateTimeToday(900, getState().timeZoneOffsetMinutes);
+      dispatch({ type: "CREATE_SCENARIO", input: { ...input, analysisTime }, createdBy });
     },
     deleteScenario: (scenarioId, source = "human") => {
       requireScenario(scenarioId);
