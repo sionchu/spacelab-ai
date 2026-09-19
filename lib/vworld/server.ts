@@ -29,8 +29,29 @@ function responseStatus(payload: any) {
 
 async function requestJson(url: URL) {
   const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) throw new Error("VWorld request failed: " + response.status);
-  return response.json();
+  const text = await response.text();
+
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = text ? JSON.parse(text) : undefined;
+      const code = payload?.response?.error?.code ?? payload?.error?.code ?? payload?.response?.status;
+      const message = payload?.response?.error?.text ?? payload?.response?.error?.message ?? payload?.error?.message;
+      detail = [code, message].filter(Boolean).join(" ");
+    } catch {
+      detail = "";
+    }
+    const error = `VWorld request failed: HTTP ${response.status}${detail ? ` ${detail}` : ""}`;
+    console.error("[vworld]", error, "domainConfigured=" + Boolean(apiDomain()), "keyConfigured=" + Boolean(apiKey()));
+    throw new Error(error);
+  }
+
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    console.error("[vworld] Invalid JSON response", "domainConfigured=" + Boolean(apiDomain()), "keyConfigured=" + Boolean(apiKey()));
+    throw new Error("VWorld returned invalid JSON");
+  }
 }
 
 export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
