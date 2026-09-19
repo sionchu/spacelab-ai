@@ -5,9 +5,9 @@ type BuildingFeature = Feature<BuildingGeometry>;
 
 const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
 const OVERPASS_ENDPOINTS = [
-  "https://overpass.osm.jp/api/interpreter",
-  "https://overpass.private.coffee/api/interpreter",
   "https://overpass-api.de/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass.osm.jp/api/interpreter",
 ] as const;
 
 function bboxAround(lon: number, lat: number, radiusM: number) {
