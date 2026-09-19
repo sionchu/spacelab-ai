@@ -62,20 +62,31 @@ function fitColor(Cesium: any, score: number) {
   return Cesium.Color.fromCssColorString("#ef8795");
 }
 
+function waitForVWorldBootstrap(timeoutMs = 8_000) {
+  return new Promise<void>((resolve, reject) => {
+    const started = Date.now();
+    const check = () => {
+      const runtime = window as VWorldWindow;
+      if (runtime.vw?.Map) {
+        resolve();
+        return;
+      }
+      if (Date.now() - started >= timeoutMs) {
+        reject(new Error("VWorld bootstrap timed out"));
+        return;
+      }
+      window.setTimeout(check, 80);
+    };
+    check();
+  });
+}
+
 function loadVWorldScript(apiKey: string) {
   const runtime = window as VWorldWindow;
-  if (runtime.vw && runtime.ws3d && runtime.Cesium) return Promise.resolve();
+  if (runtime.vw?.Map) return Promise.resolve();
 
   const existing = document.querySelector<HTMLScriptElement>('script[data-playsafe-vworld="true"]');
-  if (existing) {
-    return new Promise<void>((resolve, reject) => {
-      if (runtime.vw) resolve();
-      else {
-        existing.addEventListener("load", () => resolve(), { once: true });
-        existing.addEventListener("error", () => reject(new Error("VWorld WebGL script failed")), { once: true });
-      }
-    });
-  }
+  if (existing) return waitForVWorldBootstrap();
 
   return new Promise<void>((resolve, reject) => {
     const script = document.createElement("script");
@@ -87,7 +98,9 @@ function loadVWorldScript(apiKey: string) {
       domain: window.location.hostname,
     });
     script.src = "https://map.vworld.kr/js/webglMapInit.js.do?" + params;
-    script.onload = () => resolve();
+    script.onload = () => {
+      void waitForVWorldBootstrap().then(resolve).catch(reject);
+    };
     script.onerror = () => reject(new Error("VWorld WebGL script failed"));
     document.head.appendChild(script);
   });
@@ -131,8 +144,7 @@ export function PlaySafeVWorldMap({
         if (disposed) return;
         const runtime = window as VWorldWindow;
         const vw = runtime.vw;
-        const Cesium = runtime.Cesium;
-        if (!vw || !Cesium) throw new Error("VWorld runtime is unavailable");
+        if (!vw) throw new Error("VWorld runtime is unavailable");
 
         const initial = snapshot.assessments[0]?.place.point ?? snapshot.query.center;
         const position = new vw.CameraPosition(
@@ -154,8 +166,10 @@ export function PlaySafeVWorldMap({
 
         vw.ws3dInitCallBack = () => {
           if (disposed) return;
-          const viewer = (window as VWorldWindow).ws3d?.viewer;
-          if (!viewer) {
+          const readyRuntime = window as VWorldWindow;
+          const viewer = readyRuntime.ws3d?.viewer;
+          const Cesium = readyRuntime.Cesium;
+          if (!viewer || !Cesium) {
             onUnavailable("VWorld viewer unavailable");
             return;
           }
