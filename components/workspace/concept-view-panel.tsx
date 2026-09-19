@@ -76,7 +76,7 @@ export function ConceptViewPanel({
     setReferenceImage(undefined);
     setResult(undefined);
     setMessage(undefined);
-  }, [scenario.id, site.id, suggestedType]);
+  }, [scenario.id, scenario.mass, site.id, suggestedType, viewpoint]);
 
   useEffect(() => {
     if (!referenceImage) {
@@ -118,22 +118,24 @@ export function ConceptViewPanel({
     setBusy(true);
     setMessage(undefined);
     try {
-      let request = preparedRequest;
       let image = referenceImage;
-      if (!request) {
+      let camera = preparedRequest?.camera;
+      if (!preparedRequest) {
         const context = await captureMap();
         image = context.image;
-        request = buildConceptViewRequest({
-          site,
-          scenario,
-          projectType,
-          visualStyle,
-          viewpoint,
-          camera: context.camera,
-        });
-        setPreparedRequest(request);
+        camera = context.camera;
         setReferenceImage(image);
       }
+
+      const request = buildConceptViewRequest({
+        site,
+        scenario,
+        projectType,
+        visualStyle,
+        viewpoint,
+        camera,
+      });
+      setPreparedRequest(request);
 
       const form = new FormData();
       form.set("metadata", JSON.stringify(request));
