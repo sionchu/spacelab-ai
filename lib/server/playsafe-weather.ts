@@ -25,6 +25,9 @@ function nearestIndex(times: string[], requested: string) {
       bestDistance = distance;
     }
   });
+  if (!Number.isFinite(target) || bestDistance > 90 * 60_000) {
+    throw new Error("Requested weather time is outside the available forecast window");
+  }
   return best;
 }
 
@@ -59,7 +62,8 @@ export async function playSafeWeather(
   url.searchParams.set("longitude", String(lon));
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("timezone", "Asia/Seoul");
-  url.searchParams.set("forecast_days", "2");
+  url.searchParams.set("past_days", "1");
+  url.searchParams.set("forecast_days", "3");
   url.searchParams.set(
     "hourly",
     [
