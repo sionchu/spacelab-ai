@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Clock3, Search, Sparkles, ThermometerSun } from "lucide-react";
 import { PlaySafeMap } from "@/components/playsafe/playsafe-map";
+import { PlaySafeVWorldMap } from "@/components/playsafe/playsafe-vworld-map";
 import { Slider } from "@/components/ui/slider";
 import { timeFromMinutes } from "@/lib/solar/sun";
 import type { GeoPoint } from "@/src/types";
@@ -44,7 +45,7 @@ function scoreBackground(score: number) {
   return "border-[#ef8795]/30 bg-[#29191d]";
 }
 
-export function PlaySafeClient() {
+export function PlaySafeClient({ vworldApiKey }: { vworldApiKey?: string }) {
   const initial = useMemo(() => kstNowParts(), []);
   const [center, setCenter] = useState<GeoPoint>({ lon: 127.11052, lat: 37.39483 });
   const [centerLabel, setCenterLabel] = useState("판교역 인근");
@@ -61,12 +62,19 @@ export function PlaySafeClient() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string>();
   const [webMcpSupported, setWebMcpSupported] = useState(false);
+  const [renderer, setRenderer] = useState<"vworld" | "analysis">(vworldApiKey ? "vworld" : "analysis");
+  const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
   snapshotRef.current = snapshot;
   selectedRef.current = selectedPlaceId;
 
   const analysisAt = `${date}T${timeFromMinutes(committedMinutes)}`;
+
+  const handleVWorldUnavailable = useCallback((reason: string) => {
+    setVworldIssue(reason);
+    setRenderer("analysis");
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -154,6 +162,27 @@ export function PlaySafeClient() {
           </div>
           <div className="hidden text-[9px] text-[#8896a1] md:block">아이와 지금 어디에서, 몇 시에 놀지 결정하는 공간 AI</div>
         </div>
+        <div className="hidden items-center gap-1 rounded-xl border border-white/8 bg-[#0b1218] p-1 md:flex">
+          <button
+            type="button"
+            disabled={!vworldApiKey}
+            onClick={() => vworldApiKey && setRenderer("vworld")}
+            className={"rounded-lg px-2.5 py-1.5 text-[9px] font-bold transition " + (renderer === "vworld"
+              ? "bg-[#1d2b35] text-[#f2c45d]"
+              : "text-[#778690] hover:text-white")}
+          >
+            VWorld 3D
+          </button>
+          <button
+            type="button"
+            onClick={() => setRenderer("analysis")}
+            className={"rounded-lg px-2.5 py-1.5 text-[9px] font-bold transition " + (renderer === "analysis"
+              ? "bg-[#1d2b35] text-[#53d6c7]"
+              : "text-[#778690] hover:text-white")}
+          >
+            분석 지도
+          </button>
+        </div>
         {webMcpSupported && (
           <div className="flex items-center gap-1 rounded-lg border border-[#7f9df4]/25 bg-[#171e31] px-2.5 py-1.5 text-[10px] text-[#a7b7ff]">
             <Bot className="size-3.5" /> PlaySafe Tools
@@ -165,7 +194,17 @@ export function PlaySafeClient() {
       </header>
 
       <section className="relative min-h-0 overflow-hidden">
-        {snapshot && (
+        {snapshot && renderer === "vworld" && vworldApiKey && (
+          <PlaySafeVWorldMap
+            apiKey={vworldApiKey}
+            snapshot={snapshot}
+            selectedPlaceId={selectedPlaceId}
+            onSelectPlace={setSelectedPlaceId}
+            onUnavailable={handleVWorldUnavailable}
+          />
+        )}
+
+        {snapshot && (renderer === "analysis" || !vworldApiKey) && (
           <PlaySafeMap
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
@@ -308,6 +347,11 @@ export function PlaySafeClient() {
               </div>
             )}
 
+            {vworldIssue && (
+              <div className="mt-3 rounded-xl border border-[#f2c45d]/20 bg-[#2a2416] p-3 text-[9px] leading-4 text-[#d9c27a]">
+                VWorld 3D를 불러오지 못해 분석 지도로 전환했습니다. {vworldIssue}
+              </div>
+            )}
             {message && <div className="mt-3 rounded-xl border border-[#ef8795]/20 bg-[#2a171c] p-3 text-[10px] text-[#efabb4]">{message}</div>}
 
             <div className="mt-3 text-[9px] leading-4 text-[#657580]">
