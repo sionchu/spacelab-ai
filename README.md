@@ -83,6 +83,27 @@ OPENAI_IMAGE_QUALITY=medium
 
 The generated image is presentation-only and never mutates the canonical site, scenario, mass, sunlight, or View Impact geometry.
 
+## Site Tools / WebMCP
+
+SpaceLab registers top-level WebMCP tools when `document.modelContext.registerTool` is available. The tools reuse the same canonical application actions and analysis functions as the human UI.
+
+- `get_spatial_workspace`
+- `search_location`
+- `select_site`
+- `create_building_mass`
+- `clone_scenario`
+- `delete_scenario`
+- `edit_building_mass`
+- `set_mass_footprint`
+- `set_sun_study_point`
+- `set_viewpoint`
+- `set_shadow_time`
+- `compare_scenarios`
+- `run_direct_sun_study`
+- `run_view_impact`
+
+Concept View generation is intentionally not exposed as a WebMCP tool because it is a user-triggered, potentially billable presentation operation.
+
 ## Deployment
 
 The project is structured for Vercel/Next.js deployment. Configure the same server-side environment variables in the deployment environment.
