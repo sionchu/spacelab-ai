@@ -33,6 +33,7 @@ Branch: `codex/next-maplibre-v1`
 - WebMCP reads and mutations reuse the same canonical application actions as the UI
 - read-only WebMCP direct-sun and GeoJSON View Impact analysis tools restored
 - WebMCP mutations wait for canonical workspace change before returning verification output
+- VWorld-first provider access now degrades to rate-limited Nominatim search, explicit manual-point parcel fallback, and mirrored Overpass building context during upstream outages
 - old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
 - canonical Site / BuildingMass / Scenario / actions / analysis retained
 
@@ -62,4 +63,4 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 
 ## Next concrete action
 
-Deploy the current RE0 head to the preview runtime, verify map/VWorld/Concept View configuration, then perform Site Tools discovery and representative read/write analysis calls in a supported ChatGPT desktop built-in browser before replacing main.
+Runtime acceptance is recorded in `docs/re0-runtime-acceptance-2026-09-19.md`. The remaining gate is Site Tools discovery plus representative read/write analysis calls in a supported ChatGPT desktop built-in browser before replacing main.
