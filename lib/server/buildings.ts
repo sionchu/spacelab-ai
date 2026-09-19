@@ -100,9 +100,17 @@ async function vworldBuildings(
     signal: AbortSignal.timeout(12_000),
     next: { revalidate: 21_600 },
   });
-  if (!response.ok) return undefined;
+  if (!response.ok) {
+    console.warn("[buildings:vworld] HTTP", response.status);
+    return undefined;
+  }
   const payload = await response.json();
-  if ((payload?.response?.status ?? payload?.status) !== "OK") return undefined;
+  const status = payload?.response?.status ?? payload?.status;
+  if (status !== "OK") {
+    const code = payload?.response?.error?.code ?? payload?.error?.code ?? status;
+    console.warn("[buildings:vworld] provider status", String(code || "unknown"));
+    return undefined;
+  }
 
   const collection = payload?.response?.result?.featureCollection as FeatureCollection | undefined;
   if (!collection?.features?.length) return undefined;
@@ -174,14 +182,16 @@ export async function nearbyBuildings(
       const vworld = await vworldBuildings(lon, lat, radiusM);
       if (vworld) return vworld;
       if (provider === "vworld") return { type: "FeatureCollection", features: [] };
-    } catch {
+    } catch (error) {
+      console.warn("[buildings:vworld] request failed", error instanceof Error ? error.message : String(error));
       if (provider === "vworld") return { type: "FeatureCollection", features: [] };
     }
   }
 
   try {
     return await osmBuildings(lon, lat, radiusM);
-  } catch {
+  } catch (error) {
+    console.warn("[buildings:osm] request failed", error instanceof Error ? error.message : String(error));
     return { type: "FeatureCollection", features: [] };
   }
 }
