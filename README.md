@@ -60,7 +60,7 @@ MapLibre owns rendering and camera interaction only. It does not own scenario st
 ## Data boundaries
 
 - **VWorld**: Korean address search + cadastral parcel.
-- **DEM**: defaults to MapLibre demo terrain and is replaceable with `NEXT_PUBLIC_DEM_TILEJSON`.
+- **DEM**: defaults to the global AWS Terrain Tiles Terrarium dataset and is replaceable with `NEXT_PUBLIC_DEM_TILE_TEMPLATE`.
 - **Nearby buildings**: `SPACELAB_BUILDING_PROVIDER=auto` tries VWorld GIS building data first and falls back to OpenStreetMap building footprints. Both are normalized to the same GeoJSON contract. VWorld building-layer runtime compatibility still requires live-key acceptance.
 - **Planned geometry**: canonical SpaceLab state converted to GeoJSON.
 - **Solar state**: SunCalc is the single solar-position source used by lighting and shadow analysis.
@@ -85,7 +85,7 @@ Optional:
 
 ```bash
 VWORLD_DOMAIN=localhost
-NEXT_PUBLIC_DEM_TILEJSON=https://demotiles.maplibre.org/terrain-tiles/tiles.json
+NEXT_PUBLIC_DEM_TILE_TEMPLATE=https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png
 NEXT_PUBLIC_BUILDING_CONTEXT_RADIUS_M=350
 SPACELAB_BUILDING_PROVIDER=auto
 ```
