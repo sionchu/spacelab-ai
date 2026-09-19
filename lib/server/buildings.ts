@@ -3,6 +3,13 @@ import type { Feature, FeatureCollection, Geometry, Polygon, MultiPolygon } from
 type BuildingGeometry = Polygon | MultiPolygon;
 type BuildingFeature = Feature<BuildingGeometry>;
 
+const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
+const OVERPASS_ENDPOINTS = [
+  "https://overpass.osm.jp/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://overpass-api.de/api/interpreter",
+] as const;
+
 function bboxAround(lon: number, lat: number, radiusM: number) {
   const latDelta = radiusM / 111_320;
   const lonDelta = radiusM / (111_320 * Math.cos((lat * Math.PI) / 180));
@@ -136,16 +143,32 @@ async function osmBuildings(
     .join(",");
   const query = `[out:json][timeout:12];way["building"](${bbox});out tags geom;`;
 
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
-    body: new URLSearchParams({ data: query }),
-    signal: AbortSignal.timeout(15_000),
-    next: { revalidate: 21_600 },
-  });
-  if (!response.ok) throw new Error(`Overpass request failed: ${response.status}`);
+  let payload: { elements?: OverpassElement[] } | undefined;
+  let lastError: Error | undefined;
 
-  const payload = await response.json() as { elements?: OverpassElement[] };
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const url = new URL(endpoint);
+      url.searchParams.set("data", query);
+      const response = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": APP_USER_AGENT,
+          Referer: "https://github.com/sionchu/spacelab-ai",
+        },
+        signal: AbortSignal.timeout(15_000),
+        next: { revalidate: 21_600 },
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      payload = await response.json() as { elements?: OverpassElement[] };
+      break;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      console.warn("[buildings:osm] endpoint failed", new URL(endpoint).host, lastError.message);
+    }
+  }
+
+  if (!payload) throw lastError ?? new Error("No Overpass endpoint available");
   const features: BuildingFeature[] = [];
 
   for (const element of payload.elements ?? []) {
