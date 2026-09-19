@@ -20,6 +20,8 @@ Branch: `codex/next-maplibre-v1`
 - 09:00–18:00 slider
 - deterministic SpaceLab shadow polygon retained
 - VWorld address/parcel requests moved behind Next.js Route Handlers
+- VWorld `F_FAC_BUILDING` surrounding-building GeoJSON with OSM fallback
+- surrounding building height normalization and MapLibre fill-extrusion
 - old Vite entrypoint, VWorld WebGL renderer, static Sites hosting config and browser-side JSONP VWorld adapter removed
 - canonical Site / BuildingMass / Scenario / actions / analysis retained
 
@@ -48,4 +50,4 @@ The code is Vercel-compatible. The existing Railway preview service requires the
 
 ## Next concrete action
 
-Add Korean surrounding-building footprints and height attributes to the MapLibre scene, then reconnect View Impact and Concept View to the new renderer.
+Reconnect View Impact to the MapLibre/GeoJSON context, then restore Concept View without feeding generated imagery back into analysis geometry.
