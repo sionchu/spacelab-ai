@@ -284,7 +284,7 @@ export function WorkspaceClient() {
               onSearch={search}
               onSelectResult={(result) => void selectParcel(result.point, result.address)}
               onMode={setMode}
-              onCreatePreset={(preset) => actions.createBuildingMass({ ...preset.input, analysisTime }, "human")}
+              onCreatePreset={(preset) => actions.createBuildingMass(preset.input, "human")}
               onMassNumber={setMassNumber}
               viewImpactResults={viewImpactResults}
               contextSource={contextSource}
@@ -347,7 +347,7 @@ export function WorkspaceClient() {
             onSearch={search}
             onSelectResult={(result) => void selectParcel(result.point, result.address)}
             onMode={setMode}
-            onCreatePreset={(preset) => actions.createBuildingMass({ ...preset.input, analysisTime }, "human")}
+            onCreatePreset={(preset) => actions.createBuildingMass(preset.input, "human")}
             onMassNumber={setMassNumber}
             viewImpactResults={viewImpactResults}
             contextSource={contextSource}
