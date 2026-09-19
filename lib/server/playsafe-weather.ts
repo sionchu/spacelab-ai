@@ -13,6 +13,19 @@ type OpenMeteoPayload = {
   };
 };
 
+type WeatherCacheEntry = {
+  payload: OpenMeteoPayload;
+  fetchedAt: number;
+};
+
+const WEATHER_CACHE_TTL_MS = 15 * 60_000;
+const WEATHER_STALE_FALLBACK_MS = 6 * 60 * 60_000;
+const weatherCache = new Map<string, WeatherCacheEntry>();
+
+function weatherCacheKey(lon: number, lat: number) {
+  return lat.toFixed(3) + "," + lon.toFixed(3);
+}
+
 function nearestIndex(times: string[], requested: string) {
   const target = new Date(requested + ":00+09:00").getTime();
   let best = 0;
@@ -77,12 +90,34 @@ export async function playSafeWeather(
     ].join(","),
   );
 
-  const response = await fetch(url, {
-    signal: AbortSignal.timeout(10_000),
-    next: { revalidate: 900 },
-  });
-  if (!response.ok) throw new Error(`Open-Meteo failed: HTTP ${response.status}`);
-  const payload = await response.json() as OpenMeteoPayload;
+  const cacheKey = weatherCacheKey(lon, lat);
+  const cached = weatherCache.get(cacheKey);
+  let payload: OpenMeteoPayload;
+
+  if (cached && Date.now() - cached.fetchedAt <= WEATHER_CACHE_TTL_MS) {
+    payload = cached.payload;
+  } else {
+    try {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(10_000),
+        next: { revalidate: 900 },
+      });
+      if (!response.ok) throw new Error(`Open-Meteo failed: HTTP ${response.status}`);
+      payload = await response.json() as OpenMeteoPayload;
+      weatherCache.set(cacheKey, { payload, fetchedAt: Date.now() });
+    } catch (error) {
+      if (cached && Date.now() - cached.fetchedAt <= WEATHER_STALE_FALLBACK_MS) {
+        console.warn(
+          "[playsafe:weather] using stale cached weather",
+          error instanceof Error ? error.message : String(error),
+        );
+        payload = cached.payload;
+      } else {
+        throw error;
+      }
+    }
+  }
+
   const times = payload.hourly?.time ?? [];
   if (!times.length) throw new Error("Open-Meteo returned no hourly data");
 
