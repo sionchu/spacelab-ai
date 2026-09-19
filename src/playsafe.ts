@@ -16,6 +16,7 @@ export type PlayPlace = {
   kind: PlayPlaceKind;
   point: GeoPoint;
   boundary?: GeoPoint[];
+  address?: string;
   distanceM: number;
   tags: Record<string, string>;
 };
@@ -227,6 +228,18 @@ function treeShadows(
   }
 
   return shadows;
+}
+
+export function playSafeShadowPolygons(
+  place: PlayPlace,
+  buildings: PlaySafeBuildingCollection,
+  trees: PlaySafeTree[],
+  localDateTime: string,
+): GeoPoint[][] {
+  return [
+    ...buildingShadows(place.point, buildings, localDateTime),
+    ...treeShadows(place.point, trees, localDateTime),
+  ].map((polygon) => polygon.map((point) => localPointToGeo(place.point, point)));
 }
 
 function sampleLocalPoints(radiusM = 24) {

@@ -5,7 +5,7 @@ import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
 import { featureCollection, point, polygon } from "@turf/turf";
 import type { Feature, Point } from "geojson";
-import type { PlaySafeSnapshot } from "@/src/playsafe";
+import { playSafeShadowPolygons, type PlaySafeSnapshot } from "@/src/playsafe";
 
 const baseStyle: StyleSpecification = {
   version: 8,
@@ -47,10 +47,12 @@ function setGeoJson(map: MapLibreMap, id: string, data: GeoJSON.GeoJSON) {
 export function PlaySafeMap({
   snapshot,
   selectedPlaceId,
+  previewAt,
   onSelectPlace,
 }: {
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
+  previewAt: string;
   onSelectPlace: (placeId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,6 +93,24 @@ export function PlaySafeMap({
     if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
     return featureCollection([polygon([ring], { id: selected.place.id })]);
   }, [selected]);
+
+  const shadowGeoJson = useMemo(() => {
+    if (!selected) return featureCollection([]);
+    const shadows = playSafeShadowPolygons(
+      selected.place,
+      snapshot.buildings,
+      snapshot.trees,
+      previewAt,
+    );
+    return featureCollection(shadows.flatMap((shadow, index) => {
+      if (shadow.length < 3) return [];
+      const ring = shadow.map((item) => [item.lon, item.lat]);
+      const first = ring[0];
+      const last = ring[ring.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
+      return [polygon([ring], { id: index })];
+    }));
+  }, [previewAt, selected, snapshot.buildings, snapshot.trees]);
 
   const heatGeoJson = useMemo(() => featureCollection(
     (selected?.heatSamples ?? []).map((sample, index) => point(
@@ -203,6 +223,17 @@ export function PlaySafeMap({
         },
       });
 
+      map.addSource("playsafe-shadows", { type: "geojson", data: shadowGeoJson });
+      map.addLayer({
+        id: "playsafe-shadows",
+        type: "fill",
+        source: "playsafe-shadows",
+        paint: {
+          "fill-color": "#071015",
+          "fill-opacity": 0.30,
+        },
+      });
+
       map.addSource("heat-samples", { type: "geojson", data: heatGeoJson });
       map.addLayer({
         id: "heat-samples",
@@ -311,9 +342,10 @@ export function PlaySafeMap({
     setGeoJson(map, "context-buildings", snapshot.buildings);
     setGeoJson(map, "playsafe-trees", treesGeoJson);
     setGeoJson(map, "selected-place-boundary", selectedBoundaryGeoJson);
+    setGeoJson(map, "playsafe-shadows", shadowGeoJson);
     setGeoJson(map, "playsafe-places", placesGeoJson);
     setGeoJson(map, "heat-samples", heatGeoJson);
-  }, [heatGeoJson, mapReady, placesGeoJson, selectedBoundaryGeoJson, snapshot.buildings, treesGeoJson]);
+  }, [heatGeoJson, mapReady, placesGeoJson, selectedBoundaryGeoJson, shadowGeoJson, snapshot.buildings, treesGeoJson]);
 
   useEffect(() => {
     const map = mapRef.current;

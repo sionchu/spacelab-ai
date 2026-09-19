@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { playSafeMapContext } from "@/lib/server/playgrounds";
 import { playSafeWeather } from "@/lib/server/playsafe-weather";
+import { reverseAddress } from "@/lib/vworld/server";
 import { assessPlayPlace } from "@/src/playsafe";
 
 function defaultKstDateTime() {
@@ -34,8 +35,15 @@ export async function GET(request: NextRequest) {
       playSafeWeather(lon, lat, requestedAt),
     ]);
     const { places, buildings, trees } = mapContext;
-
-    const assessments = places
+    const placesWithAddresses = await Promise.all(
+      places.map(async (place) => place.address
+        ? place
+        : {
+            ...place,
+            address: await reverseAddress(place.point, { allowNominatim: false }),
+          }),
+    );
+    const assessments = placesWithAddresses
       .map((place) =>
         assessPlayPlace(
           place,
@@ -49,6 +57,10 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.fitScore - a.fitScore);
 
     const best = assessments[0];
+    if (best && !best.place.address) {
+      best.place.address = await reverseAddress(best.place.point);
+    }
+
     const bestLater = assessments.flatMap((assessment) =>
       assessment.timeline.map((point) => ({
         placeId: assessment.place.id,

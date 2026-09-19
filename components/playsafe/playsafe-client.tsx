@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Bot, Clock3, Search, Sparkles, ThermometerSun } from "lucide-react";
+import { ChevronDown, Clock3, Copy, MapPin, Search, Sparkles, ThermometerSun } from "lucide-react";
 import { PlaySafeMap } from "@/components/playsafe/playsafe-map";
 import { PlaySafeVWorldMap } from "@/components/playsafe/playsafe-vworld-map";
 import { Slider } from "@/components/ui/slider";
@@ -38,13 +38,6 @@ function fitTone(score: number) {
   return "text-[#ef8795]";
 }
 
-function scoreBackground(score: number) {
-  if (score >= 75) return "bg-[#102620] ring-[#53d6c7]/35";
-  if (score >= 58) return "bg-[#17241b] ring-[#9bd4a3]/25";
-  if (score >= 38) return "bg-[#2a2416] ring-[#f2c45d]/30";
-  return "bg-[#29191d] ring-[#ef8795]/30";
-}
-
 export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const initial = useMemo(() => kstNowParts(), []);
   const [center, setCenter] = useState<GeoPoint>({ lon: 127.11052, lat: 37.39483 });
@@ -61,7 +54,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [selectedPlaceId, setSelectedPlaceId] = useState<string>();
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string>();
-  const [webMcpSupported, setWebMcpSupported] = useState(false);
+  const [copiedPlaceId, setCopiedPlaceId] = useState<string>();
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -69,6 +62,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   selectedRef.current = selectedPlaceId;
 
   const analysisAt = `${date}T${timeFromMinutes(committedMinutes)}`;
+  const previewAt = `${date}T${timeFromMinutes(minutes)}`;
 
   const handleVWorldUnavailable = useCallback((reason: string) => {
     setVworldIssue(reason);
@@ -115,7 +109,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
       getSelectedPlaceId: () => selectedRef.current,
       selectPlace: setSelectedPlaceId,
     });
-    setWebMcpSupported(registration.supported);
     return registration.dispose;
   }, []);
 
@@ -144,13 +137,23 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setSelectedPlaceId(undefined);
   }
 
+  async function copyAddress(placeId: string, address?: string) {
+    if (!address || typeof navigator === "undefined" || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(address);
+    setCopiedPlaceId(placeId);
+    window.setTimeout(() => setCopiedPlaceId((current) => current === placeId ? undefined : current), 1_500);
+  }
+
   const selected = snapshot?.assessments.find((item) => item.place.id === selectedPlaceId)
     ?? snapshot?.assessments[0];
-  const recommended = snapshot?.recommendation
-    ? snapshot.assessments.find((item) => item.place.id === snapshot.recommendation?.placeId)
-    : undefined;
+  const selectedRank = selected && snapshot
+    ? snapshot.assessments.findIndex((item) => item.place.id === selected.place.id)
+    : -1;
   const ageProfile = selected?.ageProfile ?? snapshot?.assessments[0]?.ageProfile;
   const useAnalysisFallback = !vworldEnabled || Boolean(vworldIssue);
+  const selectedIsRecommended = Boolean(
+    selected && snapshot?.recommendation?.placeId === selected.place.id,
+  );
 
   return (
     <main className="relative h-dvh overflow-hidden bg-[#0b1116] text-white">
@@ -159,6 +162,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           <PlaySafeVWorldMap
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
+            previewAt={previewAt}
             onSelectPlace={setSelectedPlaceId}
             onUnavailable={handleVWorldUnavailable}
           />
@@ -168,6 +172,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           <PlaySafeMap
             snapshot={snapshot}
             selectedPlaceId={selectedPlaceId}
+            previewAt={previewAt}
             onSelectPlace={setSelectedPlaceId}
           />
         )}
@@ -178,250 +183,277 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <header className="pointer-events-none absolute left-3 right-3 top-3 z-30 flex items-center justify-between gap-3 max-md:left-2 max-md:right-2 max-md:top-2">
-          <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl bg-[#091218]/88 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,.28)] ring-1 ring-white/8 backdrop-blur-xl">
-            <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <strong className="text-[14px] tracking-[-0.03em]">PlaySafe AI</strong>
-                <span className="hidden text-[9px] font-semibold text-[#6f817d] sm:inline">아이 야외활동 공간 AI</span>
+        <header className="pointer-events-none absolute left-4 right-4 top-4 z-30 flex items-start justify-between gap-3 max-md:left-2 max-md:right-2 max-md:top-2">
+          <div className="pointer-events-auto min-w-0 rounded-2xl bg-[#081116]/78 px-3 py-2.5 shadow-lg backdrop-blur-xl">
+            <div className="flex items-center gap-2">
+              <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
+              <div className="min-w-0">
+                <strong className="block text-[15px] tracking-[-0.03em]">PlaySafe</strong>
+                <span className="block max-w-[300px] truncate text-[11px] text-[#8d9aa3]">{centerLabel}</span>
               </div>
-              <div className="max-w-[280px] truncate text-[9px] text-[#98a6af]">{centerLabel}</div>
             </div>
           </div>
-          <div className="pointer-events-auto flex items-center gap-2">
-            {snapshot && (
-              <span className="rounded-full bg-[#091218]/88 px-3 py-1.5 text-[9px] text-[#aebbc3] ring-1 ring-white/8 backdrop-blur-xl">
-                <strong className={useAnalysisFallback ? "text-[#e2c66f]" : "text-[#72e2d3]"}>
-                  {useAnalysisFallback ? "분석지도 fallback" : "VWorld 3D"}
-                </strong>
-                <span className="mx-1.5 text-[#52616b]">·</span>
-                체감 {snapshot.weather.apparentTemperatureC.toFixed(1)}°C · UV {snapshot.weather.uvIndex.toFixed(1)}
-              </span>
-            )}
-            {webMcpSupported && (
-              <span className="hidden items-center gap-1 rounded-full bg-[#111a2d]/90 px-2.5 py-1.5 text-[9px] text-[#a7b7ff] ring-1 ring-[#7f9df4]/20 backdrop-blur sm:flex">
-                <Bot className="size-3" /> AI tools
-              </span>
-            )}
-          </div>
+
+          {snapshot && (
+            <div className="pointer-events-auto rounded-2xl bg-[#081116]/78 px-3 py-2.5 text-right shadow-lg backdrop-blur-xl">
+              <div className="text-[12px] font-semibold text-white">
+                체감 {snapshot.weather.apparentTemperatureC.toFixed(1)}°C
+                <span className="mx-2 text-[#53616a]">·</span>
+                UV {snapshot.weather.uvIndex.toFixed(1)}
+              </div>
+              <div className="mt-0.5 text-[11px] text-[#7d8992]">
+                {useAnalysisFallback ? "경량 지도 fallback" : "실시간 3D 열환경"}
+              </div>
+            </div>
+          )}
         </header>
 
-        <aside className="absolute bottom-[82px] left-3 top-[72px] z-20 w-[352px] overflow-y-auto rounded-[28px] bg-[#0a1319]/90 shadow-[0_22px_70px_rgba(0,0,0,.38)] ring-1 ring-white/7 backdrop-blur-2xl max-md:bottom-[72px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[54dvh] max-md:w-auto">
-          <div className="p-4">
-            <form onSubmit={search} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-2xl bg-black/20 shadow-inner">
+        <aside className="absolute bottom-[52px] left-4 top-[82px] z-20 w-[392px] overflow-y-auto rounded-[30px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-md:bottom-[52px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[68dvh] max-md:w-auto">
+          <div className="p-5 max-md:p-4">
+            <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
+              <Search className="size-4 shrink-0 text-[#6f7f89]" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="동네, 공원, 주소 검색"
-                className="min-w-0 bg-transparent px-3 py-2.5 text-xs outline-none"
+                className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-[#61707a]"
               />
-              <button disabled={searching} className="px-3 text-[#53d6c7]">
-                <Search className="size-4" />
+              <button disabled={searching} className="text-[12px] font-semibold text-[#69ddd0]">
+                {searching ? "검색 중" : "검색"}
               </button>
             </form>
 
             {searchResults.length > 0 && (
-              <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-white/8 bg-[#0c141a]">
+              <div className="mt-2 overflow-hidden rounded-2xl bg-[#101a21]">
                 {searchResults.slice(0, 5).map((result) => (
                   <button
                     key={result.id}
+                    type="button"
                     onClick={() => chooseSearchResult(result)}
-                    className="grid w-full gap-0.5 border-b border-white/6 px-3 py-2 text-left last:border-0 hover:bg-white/5"
+                    className="block w-full px-3 py-3 text-left hover:bg-white/[0.045]"
                   >
-                    <strong className="truncate text-[11px]">{result.title}</strong>
-                    <span className="truncate text-[9px] text-[#7f8d98]">{result.address}</span>
+                    <strong className="block truncate text-[13px]">{result.title}</strong>
+                    <span className="mt-0.5 block truncate text-[11px] leading-5 text-[#7e8c95]">{result.address}</span>
                   </button>
                 ))}
               </div>
             )}
 
-            <div className="mt-3 border-y border-white/[0.065] py-3">
-              <div className="flex items-center gap-2.5">
-                <div className="grid size-9 shrink-0 place-items-center rounded-full bg-[#102520] text-xl">🧒</div>
-                <label className="min-w-0">
-                  <div className="text-[9px] font-bold text-[#6f817d]">아이 나이</div>
-                  <select
-                    value={childAge}
-                    onChange={(event) => setChildAge(Number(event.target.value))}
-                    className="mt-0.5 bg-transparent pr-6 text-[13px] font-extrabold text-white outline-none"
-                  >
-                    {Array.from({ length: 10 }, (_, index) => index + 3).map((age) => (
-                      <option key={age} value={age}>{age}세</option>
-                    ))}
-                  </select>
-                </label>
-                <div className="ml-auto">
-                  <div className="mb-1 text-right text-[9px] font-bold text-[#6f817d]">활동시간</div>
-                  <div className="flex gap-1">
-                    {[20, 40, 60].map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setDuration(value)}
-                        className={"rounded-full px-2.5 py-1.5 text-[10px] font-extrabold transition " + (duration === value
-                          ? "bg-[#15302b] text-[#71dfd2]"
-                          : "bg-white/[0.035] text-[#7e8d97] hover:text-white")}
-                      >
-                        {value}분
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              {ageProfile && (
-                <div className="mt-2.5 pl-[46px]">
-                  <div className="text-[10px] font-extrabold text-[#9fcfc5]">{ageProfile.label}</div>
-                  <p className="mt-1 text-[9px] leading-4 text-[#71818b]">
-                    {ageProfile.rationale}. 나이는 지도 열환경 자체가 아니라 장소 순위와 활동 적합도를 얼마나 보수적으로 해석할지에만 사용합니다.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="px-4 pb-4">
-            {snapshot?.recommendation && (
-              <div className="rounded-3xl bg-gradient-to-br from-[#15342c] via-[#11251f] to-[#101a20] p-4 shadow-[0_16px_38px_rgba(0,0,0,.22)]">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-1.5 text-[10px] font-extrabold text-[#72e2d3]">
-                    <Sparkles className="size-3.5" /> 지금 가기 좋은 곳
-                  </div>
-                  {recommended && (
-                    <div className={"text-2xl font-black tabular-nums " + fitTone(recommended.fitScore)}>
-                      {recommended.fitScore.toFixed(0)}
-                    </div>
-                  )}
-                </div>
-                <div className="mt-1.5 flex items-end justify-between gap-3">
-                  <div className="text-[16px] font-black tracking-[-0.02em]">{snapshot.recommendation.placeName}</div>
-                  {recommended && <div className="pb-0.5 text-[9px] font-bold text-[#9ec2b8]">{recommended.label}</div>}
-                </div>
-                {recommended && (
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[9px] text-[#a8bbb7]">
-                    <span className="rounded-full bg-white/[0.045] px-2 py-1">그늘 {recommended.shadePct.toFixed(0)}%</span>
-                    <span className="rounded-full bg-white/[0.045] px-2 py-1">UV {recommended.uvIndex.toFixed(1)}</span>
-                    <span className="rounded-full bg-white/[0.045] px-2 py-1">체감 {snapshot.weather.apparentTemperatureC.toFixed(1)}°C</span>
-                    {recommended.surfaceHeatSignal !== "정보 없음" && (
-                      <span className="rounded-full bg-white/[0.045] px-2 py-1">표면 열축적 {recommended.surfaceHeatSignal}</span>
-                    )}
-                    {recommended.mappedTreeCount > 0 && (
-                      <span className="rounded-full bg-white/[0.045] px-2 py-1">수목 {recommended.mappedTreeCount} · 그늘 {recommended.treeShadePct.toFixed(0)}%</span>
-                    )}
-                  </div>
-                )}
-                <p className="mb-0 mt-2.5 text-[10px] leading-[1.55] text-[#b0c0bd]">{snapshot.recommendation.summary}</p>
-                {snapshot.recommendation.betterTime && (
-                  <div className="mt-3 flex items-center justify-between rounded-2xl bg-black/15 px-3 py-2 text-[9px] text-[#d9c77f]">
-                    <span>더 쾌적해지는 시간</span>
-                    <strong className="text-[11px]">{snapshot.recommendation.betterTime.localDateTime.slice(11, 16)}</strong>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="mt-4 flex items-center justify-between px-1">
-              <div className="text-[10px] font-extrabold text-[#8f9ca7]">주변 장소</div>
-              <div className="text-[9px] text-[#61717c]">{snapshot?.assessments.length ?? 0}곳 비교</div>
-            </div>
-            <div className="mt-1 divide-y divide-white/[0.055] overflow-hidden">
-              {snapshot?.assessments.map((assessment, rank) => (
-                <button
-                  key={assessment.place.id}
-                  onClick={() => setSelectedPlaceId(assessment.place.id)}
-                  className={"relative w-full px-2.5 py-3.5 text-left transition " + (
-                    selected?.place.id === assessment.place.id
-                      ? scoreBackground(assessment.fitScore) + " rounded-2xl ring-1"
-                      : "bg-transparent hover:bg-white/[0.035]"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
+            {selected && snapshot && (
+              <>
+                <section className="pt-6">
+                  <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <div className="text-[9px] font-bold text-[#667783]">{rank + 1} · {assessment.place.kind === "playground" ? "놀이터" : "공원"}</div>
-                      <strong className="mt-1 block truncate text-[13px] leading-[1.4]">{assessment.place.name}</strong>
-                      <div className="mt-1.5 flex flex-wrap gap-x-2 gap-y-1 text-[9.5px] leading-[1.45] text-[#83929c]">
-                        <span>{Math.round(assessment.place.distanceM)}m</span>
-                        <span>그늘 {assessment.shadePct.toFixed(0)}%</span>
-                        <span>UV {assessment.uvIndex.toFixed(1)}</span>
-                        {assessment.surfaceHeatSignal !== "정보 없음" && <span>표면 {assessment.surfaceHeatSignal}</span>}
-                        {assessment.mappedTreeCount > 0 && <span>수목 {assessment.mappedTreeCount}</span>}
+                      <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#72e2d3]">
+                        {selectedIsRecommended && <Sparkles className="size-3.5" />}
+                        {selectedIsRecommended ? "지금 추천" : `${selectedRank + 1}번째 후보`}
                       </div>
+                      <h1 className="mt-1.5 break-keep text-[24px] font-black leading-[1.18] tracking-[-0.035em]">
+                        {selected.place.name}
+                      </h1>
                     </div>
-                    <div className="min-w-[52px] text-right">
-                      <div className={"text-[22px] font-black leading-none tabular-nums " + fitTone(assessment.fitScore)}>{assessment.fitScore.toFixed(0)}</div>
-                      <div className="mt-1 text-[8.5px] text-[#778690]">활동 적합도</div>
+                    <div className="shrink-0 text-right">
+                      <div className={"text-[36px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)}>
+                        {selected.fitScore.toFixed(0)}
+                      </div>
+                      <div className="mt-1 text-[11px] font-medium text-[#77848d]">활동 적합도</div>
                     </div>
                   </div>
-                  <div className="mt-2.5 text-[10px] font-semibold leading-[1.45] text-[#aab6bf]">{assessment.label}</div>
-                </button>
-              ))}
-            </div>
 
-            {selected && (
-              <div className="mt-4 border-t border-white/[0.065] px-1 pt-3.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-extrabold text-[#f0bb62]">시간별 변화</div>
-                  <div className="flex items-center gap-1 text-[9px] text-[#71808b]">
-                    <Clock3 className="size-3.5" /> {selected.place.name}
+                  <div className="mt-3 flex items-start gap-2 text-[12px] leading-5 text-[#a5b0b7]">
+                    <MapPin className="mt-0.5 size-4 shrink-0 text-[#6e7e87]" />
+                    <span className="min-w-0 flex-1">{selected.place.address || "주소 정보를 확인하는 중입니다."}</span>
+                    {selected.place.address && (
+                      <button
+                        type="button"
+                        onClick={() => void copyAddress(selected.place.id, selected.place.address)}
+                        className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-[#72e2d3]"
+                      >
+                        <Copy className="size-3.5" />
+                        {copiedPlaceId === selected.place.id ? "복사됨" : "주소 복사"}
+                      </button>
+                    )}
                   </div>
-                </div>
-                <div className="mt-2.5 grid gap-2">
-                  {selected.timeline.map((point) => (
-                    <div key={point.localDateTime} className="grid grid-cols-[40px_1fr_30px_46px] items-center gap-2 text-[9.5px]">
-                      <span className="text-[#8d9ba6]">{point.localDateTime.slice(11, 16)}</span>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-[#26323b]">
-                        <div className="h-full rounded-full bg-[#53d6c7]" style={{ width: `${Math.max(3, point.fitScore)}%` }} />
-                      </div>
-                      <strong className="text-right tabular-nums">{point.fitScore.toFixed(0)}</strong>
-                      <span className="text-right text-[8.5px] text-[#697983]">UV {point.uvIndex.toFixed(1)}</span>
+
+                  <div className="mt-5 grid grid-cols-3 gap-3">
+                    <div>
+                      <div className="text-[11px] text-[#70808a]">예상 그늘</div>
+                      <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.shadePct.toFixed(0)}%</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
+                    <div>
+                      <div className="text-[11px] text-[#70808a]">체감온도</div>
+                      <div className="mt-1 text-[17px] font-bold tabular-nums">{snapshot.weather.apparentTemperatureC.toFixed(1)}°</div>
+                    </div>
+                    <div>
+                      <div className="text-[11px] text-[#70808a]">UV</div>
+                      <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.uvIndex.toFixed(1)}</div>
+                    </div>
+                  </div>
 
-            {vworldIssue && (
-              <div className="mt-3 rounded-xl border border-[#f2c45d]/20 bg-[#2a2416] p-3 text-[9px] leading-4 text-[#d9c27a]">
-                VWorld 3D를 불러오지 못해 분석 지도로 전환했습니다. {vworldIssue}
-              </div>
-            )}
-            {message && <div className="mt-3 rounded-xl border border-[#ef8795]/20 bg-[#2a171c] p-3 text-[10px] text-[#efabb4]">{message}</div>}
+                  <p className="mt-4 text-[12px] leading-5 text-[#89979f]">
+                    {selectedIsRecommended
+                      ? snapshot.recommendation?.summary
+                      : selected.reasons.slice(0, 3).join(" · ")}
+                  </p>
+                </section>
 
-            <div className="mt-3 text-[9px] leading-4 text-[#657580]">
-              활동 적합도는 체감온도·습도·강수·UV·태양고도·주변 건물 그림자·OSM 수목·활동시간을 합친 상대 비교입니다. 아이 나이는 어린 연령일수록 같은 환경을 더 보수적으로 해석하는 제품 비교 규칙이며 의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
-            </div>
+                <section className="mt-6 bg-white/[0.035] px-4 py-4">
+                  <div className="flex items-center gap-4">
+                    <label className="min-w-0">
+                      <span className="block text-[11px] font-medium text-[#72818a]">아이</span>
+                      <select
+                        value={childAge}
+                        onChange={(event) => setChildAge(Number(event.target.value))}
+                        className="mt-1 bg-transparent text-[15px] font-bold text-white outline-none"
+                      >
+                        {Array.from({ length: 10 }, (_, index) => index + 3).map((age) => (
+                          <option key={age} value={age}>{age}세</option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <div className="ml-auto">
+                      <span className="block text-right text-[11px] font-medium text-[#72818a]">활동시간</span>
+                      <div className="mt-1 flex gap-1">
+                        {[20, 40, 60].map((value) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setDuration(value)}
+                            className={"rounded-lg px-3 py-1.5 text-[12px] font-bold transition " + (
+                              duration === value ? "bg-[#1c3933] text-[#78e2d5]" : "text-[#86949d] hover:bg-white/5"
+                            )}
+                          >
+                            {value}분
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {ageProfile && (
+                    <details className="group mt-3">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[12px] font-semibold text-[#93a2aa] [&::-webkit-details-marker]:hidden">
+                        왜 아이 나이가 필요한가요?
+                        <ChevronDown className="size-4 transition group-open:rotate-180" />
+                      </summary>
+                      <p className="mt-2 text-[12px] leading-5 text-[#75848d]">
+                        {ageProfile.rationale}. 나이는 실제 열환경을 바꾸지 않고 같은 장소를 얼마나 보수적으로 평가할지만 조정합니다.
+                      </p>
+                    </details>
+                  )}
+                </section>
+
+                <section className="mt-6">
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#d5b85f]">
+                        <ThermometerSun className="size-3.5" /> 방문 시간
+                      </div>
+                      <div className="mt-1 text-[24px] font-black tabular-nums">{timeFromMinutes(minutes)} KST</div>
+                    </div>
+                    <input
+                      type="date"
+                      value={date}
+                      onChange={(event) => setDate(event.target.value)}
+                      className="w-[124px] bg-transparent text-right text-[12px] text-[#99a7af] outline-none"
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <Slider
+                      value={[minutes]}
+                      min={9 * 60}
+                      max={19 * 60}
+                      step={15}
+                      onValueChange={(value) => setMinutes(value[0] ?? minutes)}
+                      onValueCommit={(value) => setCommittedMinutes(value[0] ?? minutes)}
+                    />
+                    <div className="mt-2 flex justify-between text-[11px] text-[#64737c]">
+                      <span>09:00</span><span>19:00</span>
+                    </div>
+                  </div>
+
+                  <p className="mt-2 text-[11px] leading-5 text-[#667680]">
+                    시간을 움직이면 지도 그림자가 즉시 바뀌고, 손을 떼면 활동 적합도를 다시 계산합니다.
+                  </p>
+                </section>
+
+                {snapshot.assessments.length > 1 && (
+                  <details className="group mt-6">
+                    <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-[13px] font-bold [&::-webkit-details-marker]:hidden">
+                      다른 장소 {snapshot.assessments.length - 1}곳 비교
+                      <ChevronDown className="size-4 text-[#77858e] transition group-open:rotate-180" />
+                    </summary>
+                    <div className="mt-1">
+                      {snapshot.assessments
+                        .filter((assessment) => assessment.place.id !== selected.place.id)
+                        .map((assessment) => (
+                          <button
+                            key={assessment.place.id}
+                            type="button"
+                            onClick={() => setSelectedPlaceId(assessment.place.id)}
+                            className="flex w-full items-start gap-3 py-3 text-left hover:bg-white/[0.025]"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <strong className="block truncate text-[13px]">{assessment.place.name}</strong>
+                              <span className="mt-0.5 block truncate text-[11px] text-[#74838c]">
+                                {assessment.place.address || `${Math.round(assessment.place.distanceM)}m 거리`}
+                              </span>
+                              <span className="mt-1 block text-[11px] text-[#84939b]">
+                                그늘 {assessment.shadePct.toFixed(0)}% · UV {assessment.uvIndex.toFixed(1)} · {Math.round(assessment.place.distanceM)}m
+                              </span>
+                            </div>
+                            <div className={"shrink-0 text-[22px] font-black tabular-nums " + fitTone(assessment.fitScore)}>
+                              {assessment.fitScore.toFixed(0)}
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  </details>
+                )}
+
+                <details className="group mt-4">
+                  <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-[13px] font-bold [&::-webkit-details-marker]:hidden">
+                    <span className="flex items-center gap-2"><Clock3 className="size-4 text-[#d5b85f]" /> 시간별 변화</span>
+                    <ChevronDown className="size-4 text-[#77858e] transition group-open:rotate-180" />
+                  </summary>
+                  <div className="mt-2 grid gap-3">
+                    {selected.timeline.map((point) => (
+                      <div key={point.localDateTime} className="grid grid-cols-[44px_1fr_32px_50px] items-center gap-2 text-[11px]">
+                        <span className="text-[#8d9ba6]">{point.localDateTime.slice(11, 16)}</span>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                          <div className="h-full rounded-full bg-[#53d6c7]" style={{ width: `${Math.max(3, point.fitScore)}%` }} />
+                        </div>
+                        <strong className="text-right tabular-nums">{point.fitScore.toFixed(0)}</strong>
+                        <span className="text-right text-[#697983]">UV {point.uvIndex.toFixed(1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+
+                {vworldIssue && (
+                  <p className="mt-5 text-[11px] leading-5 text-[#d6bd73]">
+                    VWorld를 불러오지 못해 경량 지도로 표시하고 있습니다.
+                  </p>
+                )}
+
+                {message && (
+                  <p className="mt-4 text-[12px] leading-5 text-[#efabb4]">{message}</p>
+                )}
+
+                <p className="mt-5 text-[11px] leading-5 text-[#5f6f78]">
+                  활동 적합도는 체감온도·강수·UV·태양고도·건물/수목 그림자·활동시간을 합친 상대 비교입니다.
+                  의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
+                </p>
+              </>
+            )}
           </div>
         </aside>
 
-        <section className="absolute bottom-3 left-[376px] right-3 z-20 rounded-[22px] bg-[#091218]/88 px-4 py-2.5 shadow-[0_14px_40px_rgba(0,0,0,.3)] ring-1 ring-white/7 backdrop-blur-xl max-md:bottom-2 max-md:left-2 max-md:right-2">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-[100px]">
-              <div className="flex items-center gap-1 text-[9px] font-bold text-[#f0bb62]"><ThermometerSun className="size-3" /> 방문 시간</div>
-              <div className="mt-0.5 text-lg font-black tabular-nums">{timeFromMinutes(minutes)} KST</div>
-            </div>
-            <div className="min-w-0 flex-1">
-              <Slider
-                value={[minutes]}
-                min={9 * 60}
-                max={19 * 60}
-                step={15}
-                onValueChange={(value) => setMinutes(value[0] ?? minutes)}
-                onValueCommit={(value) => setCommittedMinutes(value[0] ?? minutes)}
-              />
-              <div className="mt-1 flex justify-between text-[8px] text-[#71808b]"><span>09:00</span><span>19:00</span></div>
-            </div>
-            <input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-              className="rounded-lg border border-white/8 bg-[#0c141a] px-2 py-1.5 text-[10px]"
-            />
-          </div>
-        </section>
-
         {loading && snapshot && (
-          <div className="pointer-events-none absolute right-3 top-[84px] z-20 rounded-xl border border-white/10 bg-[#101820]/90 px-3 py-2 text-[10px] text-[#9cabb6] shadow-lg">
-            시간·장소 조건 재계산 중…
+          <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[11px] text-[#93a1aa] backdrop-blur-xl max-md:right-2">
+            조건을 다시 계산하는 중…
           </div>
         )}
       </section>

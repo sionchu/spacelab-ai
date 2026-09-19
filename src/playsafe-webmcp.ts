@@ -71,6 +71,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
         bestPlace: {
           id: best.place.id,
           name: best.place.name,
+          address: best.place.address,
           fitScore: Math.round(best.fitScore),
           label: best.label,
           shadePct: Math.round(best.shadePct),
@@ -96,6 +97,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
       id: item.place.id,
       name: item.place.name,
       kind: item.place.kind,
+      address: item.place.address,
       distanceM: Math.round(item.place.distanceM),
       fitScore: Math.round(item.fitScore),
       shadePct: Math.round(item.shadePct),
@@ -131,6 +133,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
         .map((item) => ({
           id: item.place.id,
           name: item.place.name,
+          address: item.place.address,
           fitScore: Math.round(item.fitScore),
           exposureScore: Math.round(item.exposureScore),
           shadePct: Math.round(item.shadePct),
@@ -217,6 +220,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
       return {
         selectedPlaceId: input.placeId,
         placeName: assessment.place.name,
+        address: assessment.place.address,
         fitScore: Math.round(assessment.fitScore),
       };
     },

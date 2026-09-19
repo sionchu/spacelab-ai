@@ -119,6 +119,19 @@ function displayName(tags: Record<string, string>, kind: PlayPlace["kind"]) {
   return kind === "playground" ? "이름 없는 어린이 놀이터" : "이름 없는 공원";
 }
 
+function addressFromTags(tags: Record<string, string>) {
+  if (tags["addr:full"]) return tags["addr:full"];
+  const region = tags["addr:province"] || tags["addr:state"];
+  const city = tags["addr:city"];
+  const district = tags["addr:district"] || tags["addr:county"];
+  const locality = tags["addr:subdistrict"] || tags["addr:neighbourhood"];
+  const street = tags["addr:street"];
+  const houseNumber = tags["addr:housenumber"];
+  const streetAddress = [street, houseNumber].filter(Boolean).join(" ");
+  const values = [region, city, district, locality, streetAddress].filter(Boolean);
+  return values.length >= 2 ? Array.from(new Set(values)).join(" ") : undefined;
+}
+
 function numberFrom(value: unknown) {
   if (value === undefined || value === null) return Number.NaN;
   return Number.parseFloat(String(value).replace(/[^0-9.-]/g, ""));
@@ -187,6 +200,7 @@ export async function playSafeMapContext(
       name: displayName(node.tags, kind),
       kind,
       point: { lon: node.lon, lat: node.lat },
+      address: addressFromTags(node.tags),
       distanceM: distanceM(lon, lat, node.lon, node.lat),
       tags: node.tags,
     });
@@ -205,6 +219,7 @@ export async function playSafeMapContext(
       kind,
       point: center,
       boundary: points,
+      address: addressFromTags(way.tags),
       distanceM: distanceM(lon, lat, center.lon, center.lat),
       tags: way.tags,
     });

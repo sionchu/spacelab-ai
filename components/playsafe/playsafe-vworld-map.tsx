@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { PlaySafeSnapshot } from "@/src/playsafe";
+import { playSafeShadowPolygons, type PlaySafeSnapshot } from "@/src/playsafe";
 
 type VWorldMapLike = {
   setOption: (options: Record<string, unknown>) => void;
@@ -85,6 +85,16 @@ function loadVWorldScript() {
   return waitForVWorldBootstrap();
 }
 
+function kstDate(localDateTime: string) {
+  const hasOffset = /(?:Z|[+-]\d{2}:\d{2})$/.test(localDateTime);
+  const value = hasOffset
+    ? localDateTime
+    : localDateTime.length === 16
+      ? localDateTime + ":00+09:00"
+      : localDateTime + "+09:00";
+  return new Date(value);
+}
+
 function clearPlaySafeEntities(viewer: any) {
   const values = [...viewer.entities.values] as Array<{ id?: string }>;
   for (const entity of values) {
@@ -97,11 +107,13 @@ function clearPlaySafeEntities(viewer: any) {
 export function PlaySafeVWorldMap({
   snapshot,
   selectedPlaceId,
+  previewAt,
   onSelectPlace,
   onUnavailable,
 }: {
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
+  previewAt: string;
   onSelectPlace: (placeId: string) => void;
   onUnavailable: (reason: string) => void;
 }) {
@@ -110,6 +122,7 @@ export function PlaySafeVWorldMap({
   const viewerRef = useRef<any>(undefined);
   const clickHandlerRef = useRef<any>(undefined);
   const readyRef = useRef(false);
+  const lastCameraPlaceRef = useRef<string | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -163,6 +176,9 @@ export function PlaySafeVWorldMap({
 
           try {
             viewer.scene.globe.depthTestAgainstTerrain = true;
+            viewer.scene.globe.enableLighting = true;
+            viewer.shadows = true;
+            viewer.clock.shouldAnimate = false;
           } catch {
             // Not critical for the presentation overlay.
           }
@@ -238,6 +254,26 @@ export function PlaySafeVWorldMap({
       const Cesium = runtime.Cesium;
       if (!viewer || !Cesium) return;
 
+      try {
+        const previewDate = kstDate(previewAt);
+        if (!Number.isNaN(previewDate.getTime())) {
+          viewer.clock.currentTime = Cesium.JulianDate.fromDate(previewDate);
+          viewer.clock.shouldAnimate = false;
+        }
+        viewer.shadows = true;
+        viewer.scene.globe.enableLighting = true;
+        const primitives = viewer.scene.primitives;
+        if (primitives?.length && Cesium.ShadowMode) {
+          for (let index = 0; index < primitives.length; index += 1) {
+            const primitive = primitives.get(index);
+            if (primitive && "shadows" in primitive) primitive.shadows = Cesium.ShadowMode.ENABLED;
+          }
+        }
+        viewer.scene.requestRender?.();
+      } catch {
+        // The PlaySafe analytical shadow overlay below remains available.
+      }
+
       clearPlaySafeEntities(viewer);
 
       snapshot.trees.slice(0, 80).forEach((tree, index) => {
@@ -273,19 +309,19 @@ export function PlaySafeVWorldMap({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: assessment.place.name + "\n" + Math.round(assessment.fitScore) + " · 그늘 " + Math.round(assessment.shadePct) + "%",
-            font: selected ? "700 16px sans-serif" : "600 13px sans-serif",
+            text: selected
+              ? assessment.place.name + " · " + Math.round(assessment.fitScore)
+              : assessment.place.name,
+            font: selected ? "700 15px sans-serif" : "600 12px sans-serif",
             fillColor: Cesium.Color.WHITE,
-            outlineColor: Cesium.Color.fromCssColorString("#0b1116"),
-            outlineWidth: 4,
+            outlineColor: Cesium.Color.fromCssColorString("#071015"),
+            outlineWidth: selected ? 4 : 3,
             style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-            pixelOffset: new Cesium.Cartesian2(0, selected ? -42 : -32),
+            pixelOffset: new Cesium.Cartesian2(0, selected ? -38 : -28),
             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            showBackground: true,
-            backgroundColor: Cesium.Color.fromCssColorString("#0b1116").withAlpha(0.78),
-            backgroundPadding: new Cesium.Cartesian2(8, 5),
+            showBackground: false,
           },
         });
       }
@@ -293,6 +329,29 @@ export function PlaySafeVWorldMap({
       const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
         ?? snapshot.assessments[0];
       if (!selected) return;
+
+      const shadowPolygons = playSafeShadowPolygons(
+        selected.place,
+        snapshot.buildings,
+        snapshot.trees,
+        previewAt,
+      );
+      shadowPolygons.slice(0, 180).forEach((polygon, index) => {
+        if (polygon.length < 3) return;
+        const positions = Cesium.Cartesian3.fromDegreesArray(
+          polygon.flatMap((point) => [point.lon, point.lat]),
+        );
+        viewer.entities.add({
+          id: "playsafe:shadow:" + index,
+          polygon: {
+            hierarchy: positions,
+            material: Cesium.Color.fromCssColorString("#071015").withAlpha(0.28),
+            height: 0.08,
+            heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+            classificationType: Cesium.ClassificationType.TERRAIN,
+          },
+        });
+      });
 
       if (selected.place.boundary && selected.place.boundary.length >= 3) {
         const coordinates = selected.place.boundary.flatMap((point) => [point.lon, point.lat]);
@@ -351,40 +410,41 @@ export function PlaySafeVWorldMap({
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         label: {
-          text: "🧒 " + snapshot.query.childAge + "세 · " + Math.round(selected.fitScore),
-          font: "700 18px sans-serif",
-          fillColor: fitColor(Cesium, selected.fitScore),
-          outlineColor: Cesium.Color.fromCssColorString("#0b1116"),
-          outlineWidth: 5,
+          text: "🧒 " + snapshot.query.childAge + "세",
+          font: "700 16px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString("#071015"),
+          outlineWidth: 4,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          pixelOffset: new Cesium.Cartesian2(0, -52),
+          pixelOffset: new Cesium.Cartesian2(0, -48),
           heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          showBackground: true,
-          backgroundColor: Cesium.Color.fromCssColorString("#0b1116").withAlpha(0.88),
-          backgroundPadding: new Cesium.Cartesian2(10, 7),
+          showBackground: false,
         },
       });
 
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          selected.place.point.lon,
-          selected.place.point.lat,
-          720,
-        ),
-        orientation: {
-          heading: Cesium.Math.toRadians(335),
-          pitch: Cesium.Math.toRadians(-48),
-          roll: 0,
-        },
-        duration: 1.15,
-      });
+      if (lastCameraPlaceRef.current !== selected.place.id) {
+        lastCameraPlaceRef.current = selected.place.id;
+        viewer.camera.flyTo({
+          destination: Cesium.Cartesian3.fromDegrees(
+            selected.place.point.lon,
+            selected.place.point.lat,
+            720,
+          ),
+          orientation: {
+            heading: Cesium.Math.toRadians(335),
+            pitch: Cesium.Math.toRadians(-48),
+            roll: 0,
+          },
+          duration: 1.0,
+        });
+      }
     };
 
     apply();
     window.addEventListener("playsafe-vworld-ready", apply);
     return () => window.removeEventListener("playsafe-vworld-ready", apply);
-  }, [selectedPlaceId, snapshot]);
+  }, [previewAt, selectedPlaceId, snapshot]);
 
   return (
     <div className="absolute inset-0">
