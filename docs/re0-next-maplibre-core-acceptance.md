@@ -38,10 +38,18 @@
 - presets still resolve to ordinary `CreateMassInput`.
 - MapLibre sources never become state owners.
 
+## RE0-07 Restored editing parity
+- custom free-polygon drawing works through MapLibre map clicks and draft GeoJSON.
+- scenario clone/selection is restored.
+- A/B comparison renders both planned masses in the same MapLibre canvas.
+- the time slider synchronizes active and compare scenario analysis time.
+- compact A/B height, estimated GFA, and direct-sun values are visible.
+
 ## Known gaps before merge
 - VWorld-first building adapter is connected but its exact `F_FAC_BUILDING` runtime compatibility is still unverified; `auto` falls back to OSM.
-- free-polygon drawing, A/B UI, View Impact and WebMCP parity must be restored on the new renderer before this branch replaces main.
+- View Impact and WebMCP parity still need restoration on the new renderer.
 - package lock should be regenerated once the Next dependency set is finalized.
+- Vercel runtime acceptance still needs an authenticated deployment target.
 
 ## Verification
 ```bash
