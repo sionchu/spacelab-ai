@@ -2,9 +2,11 @@
 
 ## Current checkpoint
 
-SpaceLab is migrating from the original Vite + VWorld WebGL viewer to a Next.js + MapLibre architecture.
+SpaceLab RE0 has been merged to `main` as Next.js + MapLibre.
 
-Branch: `codex/next-maplibre-v1`
+Canonical branch: `main`
+Merged PR: #15
+Merge commit: `06a54fe01dc2010cc7ff3b858bab5b54bd79aabc`
 
 ## Completed in this checkpoint
 
@@ -88,9 +90,9 @@ This workflow owns:
 - canonical acceptance/HANDOFF/PR documentation
 - deciding the next technical action from Codex acceptance evidence
 
-Railway note: the staged SpaceLab source was corrected to the accepted runtime commit `78b4237a31e3e32235ba1b08fd0c91ec97794c56`. A separate staged deletion for the legacy `vworld-diagnostic` service remains because Railway does not expose an individual unstage action through the available API. It does not affect the current SpaceLab runtime unless the environment patch is explicitly applied.
+Railway note: the staged SpaceLab source points to the merged `main` commit `06a54fe01dc2010cc7ff3b858bab5b54bd79aabc`. A separate staged deletion for the legacy `vworld-diagnostic` service remains because Railway does not expose an individual unstage action through the available API. It does not affect the current SpaceLab runtime unless the environment patch is explicitly applied.
 
-## Merge readiness
+## Accepted RE0 checkpoint
 
 Codex Aside Browser pass 2 is recorded in `docs/codex-aside-browser-acceptance-pass2-2026-09-19.md`.
 
@@ -109,4 +111,17 @@ Host-only limitations are not application blockers:
 - Aside Browser cannot switch responsive viewport;
 - Aside Browser does not expose `document.modelContext`, so WebMCP is `BLOCKED_BY_HOST`.
 
-PR #15 may proceed to final merge review. Do not merge automatically; wait for explicit merge instruction.
+PR #15 was squash-merged into `main`.
+
+Post-merge `main` CI passed:
+
+```bash
+npm install
+npm run typecheck
+npm run build
+git diff --check
+```
+
+Production was then redeployed from merged `main` and verified through the public root, address search and surrounding-building context routes.
+
+Next work should start from `main`; do not continue feature work on `codex/next-maplibre-v1`.
