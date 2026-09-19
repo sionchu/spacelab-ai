@@ -1,4 +1,4 @@
-import SunCalc from "suncalc";
+import { solarPosition } from "@/model";
 import type { GeoPoint } from "@/types";
 
 export type SunState = {
@@ -8,12 +8,8 @@ export type SunState = {
   daylight: boolean;
 };
 
-function localDate(date: string, totalMinutes: number) {
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  return new Date(
-    `${date}T${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:00+09:00`,
-  );
+export function timeLabel(totalMinutes: number) {
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
 export function sunStateAt(
@@ -21,17 +17,11 @@ export function sunStateAt(
   date: string,
   totalMinutes: number,
 ): SunState {
-  const position = SunCalc.getPosition(localDate(date, totalMinutes), point.lat, point.lon);
-  const altitudeDeg = position.altitude * 180 / Math.PI;
-  const azimuthDeg = ((position.azimuth * 180 / Math.PI) + 180 + 360) % 360;
+  const solar = solarPosition(point, `${date}T${timeLabel(totalMinutes)}`, 540);
   return {
-    azimuthDeg,
-    altitudeDeg,
-    polarDeg: Math.min(180, Math.max(0, 90 - altitudeDeg)),
-    daylight: altitudeDeg > 0,
+    azimuthDeg: solar.azimuthDeg,
+    altitudeDeg: solar.elevationDeg,
+    polarDeg: Math.min(180, Math.max(0, 90 - solar.elevationDeg)),
+    daylight: solar.isDaylight,
   };
-}
-
-export function timeLabel(totalMinutes: number) {
-  return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
