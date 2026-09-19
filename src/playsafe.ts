@@ -46,10 +46,18 @@ export type PlaySafeTimelinePoint = {
   label: PlaySafeAssessment["label"];
 };
 
+export type PlaySafeAgeProfile = {
+  band: "3-5" | "6-8" | "9-12";
+  label: string;
+  rationale: string;
+  policy: "conservative-product-heuristic";
+};
+
 export type PlaySafeAssessment = {
   place: PlayPlace;
   childAge: number;
   activityMinutes: number;
+  ageProfile: PlaySafeAgeProfile;
   shadePct: number;
   directSunPct: number;
   exposureScore: number;
@@ -284,6 +292,53 @@ function weatherExposure(weather: PlaySafeWeather) {
   return clamp(apparentLoad * 0.78 + humidityLoad * 0.12 + precipitationLoad * 0.10, 0, 100);
 }
 
+// Product-level conservative comparison heuristic; this is not a medical risk threshold.
+export function playSafeAgeProfile(childAge: number): PlaySafeAgeProfile & {
+  weatherMultiplier: number;
+  directSunMultiplier: number;
+  uvMultiplier: number;
+  surfaceMultiplier: number;
+  durationMultiplier: number;
+} {
+  if (childAge <= 5) {
+    return {
+      band: "3-5",
+      label: "3–5세 · 보호자 집중",
+      rationale: "같은 환경에서도 그늘 부족·강한 UV·긴 활동시간을 더 보수적으로 반영",
+      policy: "conservative-product-heuristic",
+      weatherMultiplier: 1.06,
+      directSunMultiplier: 1.18,
+      uvMultiplier: 1.20,
+      surfaceMultiplier: 1.10,
+      durationMultiplier: 1.25,
+    };
+  }
+  if (childAge <= 8) {
+    return {
+      band: "6-8",
+      label: "6–8세 · 보호자 확인",
+      rationale: "그늘·UV·활동시간을 기본 환경점수보다 조금 더 보수적으로 반영",
+      policy: "conservative-product-heuristic",
+      weatherMultiplier: 1.03,
+      directSunMultiplier: 1.10,
+      uvMultiplier: 1.10,
+      surfaceMultiplier: 1.05,
+      durationMultiplier: 1.12,
+    };
+  }
+  return {
+    band: "9-12",
+    label: "9–12세 · 기본 활동",
+    rationale: "환경 노출과 활동시간을 기본 비교 규칙으로 반영",
+    policy: "conservative-product-heuristic",
+    weatherMultiplier: 1,
+    directSunMultiplier: 1,
+    uvMultiplier: 1,
+    surfaceMultiplier: 1,
+    durationMultiplier: 1,
+  };
+}
+
 function assessAtTime(
   place: PlayPlace,
   buildings: PlaySafeBuildingCollection,
@@ -324,15 +379,20 @@ function assessAtTime(
   const shadePct = (shadedCount / Math.max(1, samples.length)) * 100;
   const treeShadePct = (treeShadedCount / Math.max(1, samples.length)) * 100;
   const directSunPct = solar.isDaylight ? 100 - shadePct : 0;
-  const durationLoad = clamp(((activityMinutes - 20) / 70) * 18, 0, 18);
+  const ageProfile = playSafeAgeProfile(childAge);
+  const durationLoad = clamp(
+    ((activityMinutes - 20) / 70) * 18 * ageProfile.durationMultiplier,
+    0,
+    24,
+  );
   const directSolarExposure = directSunPct * daylightStrength;
   const uvLoad = clamp((weather.uvIndex / 8) * 100, 0, 100);
   const surface = surfaceHeat(place);
   const exposureScore = clamp(
-    baseWeatherExposure * 0.52
-      + directSolarExposure * 0.28
-      + uvLoad * 0.08
-      + surface.load * daylightStrength * 0.07
+    baseWeatherExposure * 0.52 * ageProfile.weatherMultiplier
+      + directSolarExposure * 0.28 * ageProfile.directSunMultiplier
+      + uvLoad * 0.08 * ageProfile.uvMultiplier
+      + surface.load * daylightStrength * 0.07 * ageProfile.surfaceMultiplier
       + durationLoad,
     0,
     100,
@@ -347,9 +407,15 @@ function assessAtTime(
   if (surface.label) reasons.push(`표면 ${surface.label} · 열축적 신호 ${surface.signal}`);
   if (mappedTreeCount > 0) reasons.push(`OSM 수목 ${mappedTreeCount}그루 · 추정 수목 그늘 ${treeShadePct.toFixed(0)}%`);
   if (weather.precipitationMm > 0) reasons.push(`강수 ${weather.precipitationMm.toFixed(1)}mm/h`);
-  if (childAge <= 6) reasons.push("어린 연령 프로필 · 보수적 설명 모드");
+  reasons.push(`${ageProfile.label} · ${ageProfile.rationale}`);
 
   return {
+    ageProfile: {
+      band: ageProfile.band,
+      label: ageProfile.label,
+      rationale: ageProfile.rationale,
+      policy: ageProfile.policy,
+    },
     shadePct,
     directSunPct,
     exposureScore,

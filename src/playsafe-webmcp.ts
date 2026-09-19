@@ -77,6 +77,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
           uvIndex: Number(best.uvIndex.toFixed(1)),
           surfaceHeatSignal: best.surfaceHeatSignal,
           mappedTreeCount: best.mappedTreeCount,
+          ageProfile: best.ageProfile,
         },
         currentWeather: state.weather,
         betterTime: state.recommendation?.betterTime,
@@ -101,6 +102,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
       uvIndex: Number(item.uvIndex.toFixed(1)),
       surfaceHeatSignal: item.surfaceHeatSignal,
       mappedTreeCount: item.mappedTreeCount,
+      ageProfile: item.ageProfile,
       label: item.label,
     })),
   });
@@ -138,6 +140,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
           surfaceHeatSignal: item.surfaceHeatSignal,
           surfaceLabel: item.surfaceLabel,
           mappedTreeCount: item.mappedTreeCount,
+          ageProfile: item.ageProfile,
           label: item.label,
           reasons: item.reasons,
         }));
@@ -187,6 +190,7 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
         placeId: assessment.place.id,
         placeName: assessment.place.name,
         currentFitScore: Math.round(assessment.fitScore),
+        ageProfile: assessment.ageProfile,
         bestTime: best,
         timeline: assessment.timeline,
       };

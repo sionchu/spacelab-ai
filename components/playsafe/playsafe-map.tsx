@@ -351,15 +351,6 @@ export function PlaySafeMap({
   return (
     <div className="absolute inset-0">
       <div ref={containerRef} className="h-full w-full" />
-      <div className="pointer-events-none absolute right-3 top-3 rounded-2xl border border-white/10 bg-[#101820]/92 px-3 py-2 text-right shadow-xl backdrop-blur-sm">
-        <div className="text-[10px] font-bold text-[#f0bb62]">PLAYSAFE HEAT VIEW</div>
-        <div className="mt-1 text-sm font-extrabold">
-          {snapshot.weather.apparentTemperatureC.toFixed(1)}°C 체감
-        </div>
-        <div className="text-[9px] text-[#92a0ab]">
-          기온 {snapshot.weather.temperatureC.toFixed(1)}° · 습도 {snapshot.weather.relativeHumidityPct.toFixed(0)}% · UV {snapshot.weather.uvIndex.toFixed(1)}
-        </div>
-      </div>
     </div>
   );
 }

@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
             placeName: best.place.name,
             fitScore: best.fitScore,
             label: best.label,
-            summary: `${withSubjectParticle(best.place.name)} 현재 조건에서 상대적으로 가장 적합합니다. 예상 그늘 ${best.shadePct.toFixed(0)}%, UV ${weather.current.uvIndex.toFixed(1)}, 체감온도 ${weather.current.apparentTemperatureC.toFixed(1)}°C 기준입니다.`,
+            summary: `${withSubjectParticle(best.place.name)} 현재 조건에서 상대적으로 가장 적합합니다. ${best.ageProfile.label} 기준으로 예상 그늘 ${best.shadePct.toFixed(0)}%, UV ${weather.current.uvIndex.toFixed(1)}, 체감온도 ${weather.current.apparentTemperatureC.toFixed(1)}°C, ${activityMinutes}분 활동을 함께 반영했습니다.`,
             betterTime: bestLater && bestLater.fitScore > best.fitScore + 5
               ? {
                   placeId: bestLater.placeId,
@@ -87,8 +87,8 @@ export async function GET(request: NextRequest) {
       trees,
       methodology: {
         scope: "relative-outdoor-activity-fit",
-        note: "의학적 안전 판정이 아닌 상대적 환경 노출 비교입니다.",
-        factors: ["apparent-temperature", "humidity", "precipitation", "uv-index", "solar-elevation", "building-shadow-sampling", "osm-tree-shadow-when-mapped", "play-area-boundary", "surface-heat-signal", "activity-duration"],
+        note: "의학적 안전 판정이 아닌 상대적 환경 노출 비교입니다. 나이는 어린 아이일수록 같은 환경을 더 보수적으로 해석하는 제품 비교 휴리스틱에만 사용됩니다.",
+        factors: ["apparent-temperature", "humidity", "precipitation", "uv-index", "solar-elevation", "building-shadow-sampling", "osm-tree-shadow-when-mapped", "play-area-boundary", "surface-heat-signal", "activity-duration", "age-conservatism-profile"],
         playgroundSource: "OpenStreetMap",
         weatherSource: "Open-Meteo",
         buildingSource: buildings.features[0]?.properties?.source || "OpenStreetMap",

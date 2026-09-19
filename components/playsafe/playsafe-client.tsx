@@ -62,7 +62,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string>();
   const [webMcpSupported, setWebMcpSupported] = useState(false);
-  const [renderer, setRenderer] = useState<"vworld" | "analysis">(vworldEnabled ? "vworld" : "analysis");
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -73,7 +72,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
   const handleVWorldUnavailable = useCallback((reason: string) => {
     setVworldIssue(reason);
-    setRenderer("analysis");
   }, []);
 
   useEffect(() => {
@@ -151,85 +149,27 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const recommended = snapshot?.recommendation
     ? snapshot.assessments.find((item) => item.place.id === snapshot.recommendation?.placeId)
     : undefined;
+  const ageProfile = selected?.ageProfile ?? snapshot?.assessments[0]?.ageProfile;
+  const useAnalysisFallback = !vworldEnabled || Boolean(vworldIssue);
 
   return (
-    <main className="grid h-dvh grid-rows-[58px_minmax(0,1fr)] overflow-hidden bg-[#0b1116] text-white">
-      <header className="flex items-center gap-3 border-b border-white/8 bg-[#0f161d] px-3 md:px-5">
-        <div className="grid size-8 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <strong className="text-[15px] tracking-[-0.03em]">PlaySafe AI</strong>
-            <span className="rounded-full border border-[#53d6c7]/20 bg-[#11231f] px-2 py-0.5 text-[9px] text-[#71dfd2]">
-              playground heat intelligence
-            </span>
-          </div>
-          <div className="hidden text-[9px] text-[#8896a1] md:block">아이와 지금 어디에서, 몇 시에 놀지 결정하는 공간 AI</div>
-        </div>
-        <div className="hidden items-center gap-1 rounded-xl border border-white/8 bg-[#0b1218] p-1 md:flex">
-          <button
-            type="button"
-            disabled={!vworldEnabled}
-            onClick={() => vworldEnabled && setRenderer("vworld")}
-            className={"rounded-lg px-2.5 py-1.5 text-[9px] font-bold transition " + (renderer === "vworld"
-              ? "bg-[#1d2b35] text-[#f2c45d]"
-              : "text-[#778690] hover:text-white")}
-          >
-            VWorld 3D
-          </button>
-          <button
-            type="button"
-            onClick={() => setRenderer("analysis")}
-            className={"rounded-lg px-2.5 py-1.5 text-[9px] font-bold transition " + (renderer === "analysis"
-              ? "bg-[#1d2b35] text-[#53d6c7]"
-              : "text-[#778690] hover:text-white")}
-          >
-            분석 지도
-          </button>
-        </div>
-        {webMcpSupported && (
-          <div className="flex items-center gap-1 rounded-lg border border-[#7f9df4]/25 bg-[#171e31] px-2.5 py-1.5 text-[10px] text-[#a7b7ff]">
-            <Bot className="size-3.5" /> PlaySafe Tools
-          </div>
-        )}
-        <div className="max-w-[240px] truncate rounded-lg bg-white/[0.045] px-2.5 py-1.5 text-[10px] text-[#a8b3bd]">
-          {centerLabel}
-        </div>
-      </header>
-
-      <section className="relative min-h-0 overflow-hidden">
-        {snapshot && vworldEnabled && (
-          <div
-            className={"absolute inset-0 transition-opacity duration-200 " + (
-              renderer === "vworld"
-                ? "z-[2] opacity-100"
-                : "pointer-events-none z-0 opacity-0"
-            )}
-            aria-hidden={renderer !== "vworld"}
-          >
-            <PlaySafeVWorldMap
-              snapshot={snapshot}
-              selectedPlaceId={selectedPlaceId}
-              onSelectPlace={setSelectedPlaceId}
-              onUnavailable={handleVWorldUnavailable}
-            />
-          </div>
+    <main className="relative h-dvh overflow-hidden bg-[#0b1116] text-white">
+      <section className="absolute inset-0 overflow-hidden">
+        {snapshot && !useAnalysisFallback && (
+          <PlaySafeVWorldMap
+            snapshot={snapshot}
+            selectedPlaceId={selectedPlaceId}
+            onSelectPlace={setSelectedPlaceId}
+            onUnavailable={handleVWorldUnavailable}
+          />
         )}
 
-        {snapshot && (
-          <div
-            className={"absolute inset-0 transition-opacity duration-200 " + (
-              renderer === "analysis" || !vworldEnabled
-                ? "z-[2] opacity-100"
-                : "pointer-events-none z-0 opacity-0"
-            )}
-            aria-hidden={renderer !== "analysis" && vworldEnabled}
-          >
-            <PlaySafeMap
-              snapshot={snapshot}
-              selectedPlaceId={selectedPlaceId}
-              onSelectPlace={setSelectedPlaceId}
-            />
-          </div>
+        {snapshot && useAnalysisFallback && (
+          <PlaySafeMap
+            snapshot={snapshot}
+            selectedPlaceId={selectedPlaceId}
+            onSelectPlace={setSelectedPlaceId}
+          />
         )}
 
         {!snapshot && (
@@ -238,7 +178,36 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <aside className="absolute left-3 top-3 z-20 max-h-[calc(100%-104px)] w-[360px] overflow-y-auto rounded-[26px] border border-white/10 bg-[#0d161d]/94 shadow-[0_18px_60px_rgba(0,0,0,.36)] backdrop-blur-xl max-md:bottom-[76px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[52dvh] max-md:w-auto">
+        <header className="pointer-events-none absolute left-3 right-3 top-3 z-30 flex items-center justify-between gap-3 max-md:left-2 max-md:right-2 max-md:top-2">
+          <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-2xl bg-[#091218]/88 px-3 py-2 shadow-[0_10px_30px_rgba(0,0,0,.28)] ring-1 ring-white/8 backdrop-blur-xl">
+            <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <strong className="text-[14px] tracking-[-0.03em]">PlaySafe AI</strong>
+                <span className="hidden text-[9px] font-semibold text-[#6f817d] sm:inline">아이 야외활동 공간 AI</span>
+              </div>
+              <div className="max-w-[280px] truncate text-[9px] text-[#98a6af]">{centerLabel}</div>
+            </div>
+          </div>
+          <div className="pointer-events-auto flex items-center gap-2">
+            {snapshot && (
+              <span className="rounded-full bg-[#091218]/88 px-3 py-1.5 text-[9px] text-[#aebbc3] ring-1 ring-white/8 backdrop-blur-xl">
+                <strong className={useAnalysisFallback ? "text-[#e2c66f]" : "text-[#72e2d3]"}>
+                  {useAnalysisFallback ? "분석지도 fallback" : "VWorld 3D"}
+                </strong>
+                <span className="mx-1.5 text-[#52616b]">·</span>
+                체감 {snapshot.weather.apparentTemperatureC.toFixed(1)}°C · UV {snapshot.weather.uvIndex.toFixed(1)}
+              </span>
+            )}
+            {webMcpSupported && (
+              <span className="hidden items-center gap-1 rounded-full bg-[#111a2d]/90 px-2.5 py-1.5 text-[9px] text-[#a7b7ff] ring-1 ring-[#7f9df4]/20 backdrop-blur sm:flex">
+                <Bot className="size-3" /> AI tools
+              </span>
+            )}
+          </div>
+        </header>
+
+        <aside className="absolute bottom-[82px] left-3 top-[72px] z-20 w-[352px] overflow-y-auto rounded-[28px] bg-[#0a1319]/90 shadow-[0_22px_70px_rgba(0,0,0,.38)] ring-1 ring-white/7 backdrop-blur-2xl max-md:bottom-[72px] max-md:left-2 max-md:right-2 max-md:top-auto max-md:max-h-[54dvh] max-md:w-auto">
           <div className="p-4">
             <form onSubmit={search} className="grid grid-cols-[1fr_auto] overflow-hidden rounded-2xl bg-black/20 shadow-inner">
               <input
@@ -267,31 +236,32 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               </div>
             )}
 
-            <div className="mt-3 rounded-2xl bg-white/[0.03] px-3 py-3">
+            <div className="mt-3 border-y border-white/[0.065] py-3">
               <div className="flex items-center gap-2.5">
-                <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#102520] text-2xl ring-1 ring-[#53d6c7]/15">🧒</div>
-                <div className="min-w-0">
-                  <div className="text-[9px] font-bold text-[#6f817d]">아이</div>
+                <div className="grid size-9 shrink-0 place-items-center rounded-full bg-[#102520] text-xl">🧒</div>
+                <label className="min-w-0">
+                  <div className="text-[9px] font-bold text-[#6f817d]">아이 나이</div>
                   <select
                     value={childAge}
                     onChange={(event) => setChildAge(Number(event.target.value))}
                     className="mt-0.5 bg-transparent pr-6 text-[13px] font-extrabold text-white outline-none"
                   >
-                    {Array.from({ length: 9 }, (_, index) => index + 3).map((age) => (
+                    {Array.from({ length: 10 }, (_, index) => index + 3).map((age) => (
                       <option key={age} value={age}>{age}세</option>
                     ))}
                   </select>
-                </div>
+                </label>
                 <div className="ml-auto">
-                  <div className="mb-1 text-right text-[9px] font-bold text-[#6f817d]">야외활동 시간</div>
-                  <div className="flex rounded-xl bg-black/15 p-0.5">
+                  <div className="mb-1 text-right text-[9px] font-bold text-[#6f817d]">활동시간</div>
+                  <div className="flex gap-1">
                     {[20, 40, 60].map((value) => (
                       <button
                         key={value}
+                        type="button"
                         onClick={() => setDuration(value)}
-                        className={"rounded-[10px] px-3 py-1.5 text-[10px] font-extrabold transition " + (duration === value
+                        className={"rounded-full px-2.5 py-1.5 text-[10px] font-extrabold transition " + (duration === value
                           ? "bg-[#15302b] text-[#71dfd2]"
-                          : "text-[#7e8d97] hover:text-white")}
+                          : "bg-white/[0.035] text-[#7e8d97] hover:text-white")}
                       >
                         {value}분
                       </button>
@@ -299,6 +269,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </div>
                 </div>
               </div>
+              {ageProfile && (
+                <div className="mt-2.5 pl-[46px]">
+                  <div className="text-[10px] font-extrabold text-[#9fcfc5]">{ageProfile.label}</div>
+                  <p className="mt-1 text-[9px] leading-4 text-[#71818b]">
+                    {ageProfile.rationale}. 나이는 지도 열환경 자체가 아니라 장소 순위와 활동 적합도를 얼마나 보수적으로 해석할지에만 사용합니다.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -410,12 +388,12 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             {message && <div className="mt-3 rounded-xl border border-[#ef8795]/20 bg-[#2a171c] p-3 text-[10px] text-[#efabb4]">{message}</div>}
 
             <div className="mt-3 text-[9px] leading-4 text-[#657580]">
-              활동 적합도는 체감온도·습도·강수·UV·태양고도·주변 건물 그림자·OSM에 실제 매핑된 수목·활동시간을 합친 상대 비교입니다. 표면재는 열축적 신호로만 사용하며 의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
+              활동 적합도는 체감온도·습도·강수·UV·태양고도·주변 건물 그림자·OSM 수목·활동시간을 합친 상대 비교입니다. 아이 나이는 어린 연령일수록 같은 환경을 더 보수적으로 해석하는 제품 비교 규칙이며 의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
             </div>
           </div>
         </aside>
 
-        <section className="absolute bottom-3 left-[387px] right-3 z-20 rounded-2xl border border-white/10 bg-[#101820]/94 p-3 shadow-xl backdrop-blur-md max-md:bottom-2 max-md:left-2 max-md:right-2">
+        <section className="absolute bottom-3 left-[376px] right-3 z-20 rounded-[22px] bg-[#091218]/88 px-4 py-2.5 shadow-[0_14px_40px_rgba(0,0,0,.3)] ring-1 ring-white/7 backdrop-blur-xl max-md:bottom-2 max-md:left-2 max-md:right-2">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-[100px]">
               <div className="flex items-center gap-1 text-[9px] font-bold text-[#f0bb62]"><ThermometerSun className="size-3" /> 방문 시간</div>
