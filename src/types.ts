@@ -77,6 +77,8 @@ export type MassPatch = Partial<Pick<BuildingMass, "heightM" | "floors" | "rotat
 export type CreateMassInput = {
   name?: string;
   intent?: string;
+  /** Local site datetime used by the scenario's solar preview. */
+  analysisTime?: string;
   footprint?: Footprint;
   heightM?: number;
   floors?: number;
