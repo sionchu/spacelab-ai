@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import bbox from "@turf/bbox";
+import { bbox } from "@turf/turf";
 import type { FeatureCollection, Polygon } from "geojson";
 import maplibregl, {
   type GeoJSONSource,
@@ -102,7 +102,7 @@ export function SpatialMap({
   onMapClick: (point: GeoPoint) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap>();
+  const mapRef = useRef<MapLibreMap | null>(null);
   const onMapClickRef = useRef(onMapClick);
   const [ready, setReady] = useState(false);
   const [contextBuildings, setContextBuildings] = useState<FeatureCollection<Polygon>>(emptyBuildings);
@@ -219,7 +219,7 @@ export function SpatialMap({
     return () => {
       setReady(false);
       map.remove();
-      mapRef.current = undefined;
+      mapRef.current = null;
     };
   }, [demTileJson]);
 
