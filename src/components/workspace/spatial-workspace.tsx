@@ -1,7 +1,16 @@
 "use client";
 
 import { FormEvent, useMemo, useReducer, useRef, useState } from "react";
-import { Building2, MapPin, Move3D, Search, SunMedium } from "lucide-react";
+import {
+  Building2,
+  CopyPlus,
+  GitCompareArrows,
+  MapPin,
+  Move3D,
+  PenTool,
+  Search,
+  SunMedium,
+} from "lucide-react";
 import { createApplicationActions } from "@/actions";
 import { directSunStudy, planningMetrics } from "@/analysis";
 import { buildingPresets } from "@/building-presets";
@@ -16,7 +25,7 @@ import {
   reducer,
 } from "@/model";
 import { sunStateAt, timeLabel } from "@/lib/sun";
-import type { GeoPoint, Site } from "@/types";
+import type { GeoPoint, LocalPoint, Site } from "@/types";
 
 type SearchResult = {
   id: string;
@@ -60,8 +69,19 @@ export function SpatialWorkspace() {
   const active = state.activeScenarioId
     ? getScenario(state, state.activeScenarioId)
     : undefined;
-  const visibleScenarios = active ? [active] : [];
+  const compare = state.compareScenarioId
+    ? getScenario(state, state.compareScenarioId)
+    : undefined;
+  const visibleScenarios = useMemo(
+    () => [active, compare].filter(
+      (scenario, index, all) => scenario
+        && all.findIndex((candidate) => candidate?.id === scenario.id) === index,
+    ).filter(Boolean) as NonNullable<typeof active>[],
+    [active, compare],
+  );
+
   const [interactionMode, setInteractionMode] = useState<MapInteractionMode>("inspect");
+  const [draftPoints, setDraftPoints] = useState<LocalPoint[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -74,10 +94,16 @@ export function SpatialWorkspace() {
     () => sunStateAt(state.site.center, date, minutes),
     [date, minutes, state.site.center],
   );
+
   const metrics = useMemo(
     () => active ? planningMetrics(state.site, active.mass) : undefined,
     [active, state.site],
   );
+  const compareMetrics = useMemo(
+    () => compare ? planningMetrics(state.site, compare.mass) : undefined,
+    [compare, state.site],
+  );
+
   const sunStudy = useMemo(
     () => active
       ? directSunStudy(
@@ -89,6 +115,18 @@ export function SpatialWorkspace() {
         )
       : undefined,
     [active, date, state.site, state.sunStudyPoint, state.timeZoneOffsetMinutes],
+  );
+  const compareSunStudy = useMemo(
+    () => compare
+      ? directSunStudy(
+          compare.mass,
+          state.site,
+          state.sunStudyPoint ?? state.site.center,
+          date,
+          state.timeZoneOffsetMinutes,
+        )
+      : undefined,
+    [compare, date, state.site, state.sunStudyPoint, state.timeZoneOffsetMinutes],
   );
 
   async function searchSite(event: FormEvent) {
@@ -122,6 +160,7 @@ export function SpatialWorkspace() {
       if (!response.ok || !payload.site) throw new Error(payload?.error || "필지 선택 실패");
       actions.setSite(payload.site as Site, "human");
       setSearchResults([]);
+      setDraftPoints([]);
       if (label) setSearchQuery(label);
       setInteractionMode("inspect");
       setSiteMessage("선택 필지를 3D 지형에 맞췄습니다.");
@@ -135,12 +174,19 @@ export function SpatialWorkspace() {
       void selectParcel(point);
       return;
     }
+
     if (interactionMode === "move-mass" && active) {
       const local = geoPointToLocal(state.site.center, point);
       actions.editBuildingMass(active.id, {
         position: { eastM: local.xM, northM: local.yM },
       }, "human");
       setInteractionMode("inspect");
+      return;
+    }
+
+    if (interactionMode === "draw-polygon") {
+      const local = geoPointToLocal(state.site.center, point);
+      setDraftPoints((points) => [...points, local]);
     }
   }
 
@@ -148,6 +194,7 @@ export function SpatialWorkspace() {
     const preset = buildingPresets[index];
     if (!preset) return;
     actions.createBuildingMass(preset.input, "human");
+    setDraftPoints([]);
     setInteractionMode("inspect");
   }
 
@@ -159,11 +206,67 @@ export function SpatialWorkspace() {
       heightM: 18,
       floors: 5,
     }, "human");
+    setDraftPoints([]);
+    setInteractionMode("inspect");
+  }
+
+  function startPolygon() {
+    setBuildingTab("custom");
+    setDraftPoints([]);
+    setInteractionMode("draw-polygon");
+  }
+
+  function finishPolygon() {
+    if (draftPoints.length < 3) return;
+    actions.createBuildingMass({
+      name: "커스텀 자유형",
+      intent: "지도에서 작성한 자유형 배치안",
+      footprint: { kind: "polygon", points: draftPoints },
+      heightM: 18,
+      floors: 5,
+    }, "human");
+    setDraftPoints([]);
+    setInteractionMode("inspect");
+  }
+
+  function cancelMapMode() {
+    if (interactionMode === "draw-polygon") setDraftPoints([]);
+    setInteractionMode("inspect");
+  }
+
+  function cloneActive() {
+    if (!active) return;
+    actions.cloneScenario(active.id, undefined, "human");
+  }
+
+  function selectActiveScenario(scenarioId: string) {
+    if (scenarioId === active?.id) return;
+    const previousActiveId = active?.id;
+    const currentCompareId = state.compareScenarioId;
+
+    actions.selectScenario(scenarioId);
+    if (currentCompareId === scenarioId) {
+      actions.compareScenarios(
+        scenarioId,
+        previousActiveId && previousActiveId !== scenarioId ? previousActiveId : undefined,
+      );
+    } else if (currentCompareId) {
+      actions.compareScenarios(scenarioId, currentCompareId);
+    }
+  }
+
+  function setCompareScenario(compareId?: string) {
+    if (!active) return;
+    actions.compareScenarios(active.id, compareId);
   }
 
   function setTime(nextMinutes: number) {
     if (!active) return;
-    actions.setShadowTime(active.id, localDateTime(date, nextMinutes), "human");
+    const value = localDateTime(date, nextMinutes);
+    actions.setShadowTime(active.id, value, "human");
+    if (compare && compare.id !== active.id) {
+      actions.setShadowTime(compare.id, value, "human");
+    }
   }
 
   return (
@@ -187,6 +290,7 @@ export function SpatialWorkspace() {
           activeScenarioId={state.activeScenarioId}
           sun={sun}
           interactionMode={interactionMode}
+          draftPoints={draftPoints}
           onMapClick={handleMapClick}
         />
 
@@ -268,10 +372,21 @@ export function SpatialWorkspace() {
               </div>
             </TabsContent>
             <TabsContent value="custom">
-              <Button variant="secondary" className="w-full" onClick={createCustomRectangle}>
-                사각형 매스 만들기
-              </Button>
-              <p className="panel-helper">자유형 폴리곤 편집기는 MapLibre 이관 2단계에서 복원합니다.</p>
+              <div className="custom-create-actions">
+                <Button variant="secondary" onClick={createCustomRectangle}>
+                  사각형
+                </Button>
+                <Button
+                  variant={interactionMode === "draw-polygon" ? "default" : "outline"}
+                  onClick={startPolygon}
+                >
+                  <PenTool size={14} />
+                  자유형
+                </Button>
+              </div>
+              <p className="panel-helper">
+                자유형은 지도에서 꼭짓점을 차례로 찍은 뒤 완료합니다.
+              </p>
             </TabsContent>
           </Tabs>
 
@@ -294,14 +409,101 @@ export function SpatialWorkspace() {
               </Button>
             </>
           )}
+
+          {state.scenarios.length > 0 && (
+            <section className="scenario-controls">
+              <div className="scenario-control-head">
+                <div>
+                  <span>대안</span>
+                  <strong>{state.scenarios.length}개</strong>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={cloneActive}
+                  disabled={!active}
+                >
+                  <CopyPlus size={14} />
+                  복제
+                </Button>
+              </div>
+
+              <div className="scenario-chip-list">
+                {state.scenarios.map((scenario) => (
+                  <button
+                    type="button"
+                    key={scenario.id}
+                    className={scenario.id === active?.id ? "active" : ""}
+                    onClick={() => selectActiveScenario(scenario.id)}
+                  >
+                    <b>{scenario.id}</b>
+                    <span>{scenario.mass.heightM}m · {scenario.mass.floors}층</span>
+                  </button>
+                ))}
+              </div>
+
+              {active && state.scenarios.length > 1 && (
+                <label className="compare-select">
+                  <span><GitCompareArrows size={13} /> 비교안</span>
+                  <select
+                    value={state.compareScenarioId ?? ""}
+                    onChange={(event) => setCompareScenario(event.target.value || undefined)}
+                  >
+                    <option value="">비교 안 함</option>
+                    {state.scenarios
+                      .filter((scenario) => scenario.id !== active.id)
+                      .map((scenario) => (
+                        <option key={scenario.id} value={scenario.id}>
+                          {scenario.id} · {scenario.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+
+              {active && compare && (
+                <div className="compare-mini-grid">
+                  <div>
+                    <span>높이 A / B</span>
+                    <strong>{active.mass.heightM} / {compare.mass.heightM}m</strong>
+                  </div>
+                  <div>
+                    <span>연면적 A / B</span>
+                    <strong>
+                      {Math.round(metrics?.estimatedGfaM2 ?? 0).toLocaleString()} /
+                      {" "}{Math.round(compareMetrics?.estimatedGfaM2 ?? 0).toLocaleString()}㎡
+                    </strong>
+                  </div>
+                  <div>
+                    <span>일조 A / B</span>
+                    <strong>
+                      {formatMinutes(sunStudy?.sunMinutes ?? 0)} /
+                      {" "}{formatMinutes(compareSunStudy?.sunMinutes ?? 0)}
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </section>
+          )}
         </aside>
 
         {interactionMode !== "inspect" && (
           <div className="mode-hint">
-            {interactionMode === "pick-site"
-              ? "지도에서 검토할 필지를 탭하세요."
-              : "건물 중심을 옮길 위치를 탭하세요."}
-            <button type="button" onClick={() => setInteractionMode("inspect")}>취소</button>
+            {interactionMode === "pick-site" && "지도에서 검토할 필지를 탭하세요."}
+            {interactionMode === "move-mass" && "건물 중심을 옮길 위치를 탭하세요."}
+            {interactionMode === "draw-polygon" && (
+              <>
+                <span>자유형 꼭짓점 {draftPoints.length}개</span>
+                <button
+                  type="button"
+                  disabled={draftPoints.length < 3}
+                  onClick={finishPolygon}
+                >
+                  완료
+                </button>
+              </>
+            )}
+            <button type="button" onClick={cancelMapMode}>취소</button>
           </div>
         )}
 
@@ -316,6 +518,7 @@ export function SpatialWorkspace() {
               <span>고도 {sun.altitudeDeg.toFixed(1)}°</span>
               <span>방위 {sun.azimuthDeg.toFixed(0)}°</span>
               <span>{sunStudy ? `직접 일조 ${formatMinutes(sunStudy.sunMinutes)}` : "건물 생성 전"}</span>
+              {compareSunStudy && <span>B {formatMinutes(compareSunStudy.sunMinutes)}</span>}
             </div>
           </div>
           <div className="timeline-row">
