@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit --pretty false",
-    "sync:playsafe-data": "python tools/sync-playsafe-public-data.py"
+    "sync:playsafe-data": "python tools/sync-playsafe-public-data.py",
+    "sync:playsafe-apartments": "python tools/sync-playsafe-apartment-index.py"
   },
   "dependencies": {
     "@radix-ui/react-slider": "1.3.6",

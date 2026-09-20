@@ -9,3 +9,5 @@ dist/
 *.tsbuildinfo
 .DS_Store
 *.log
+data/playsafe/kapt-download/
+data/playsafe/kapt-basic.xlsx

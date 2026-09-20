@@ -30,7 +30,9 @@ type SearchResult = {
   title: string;
   address: string;
   point: GeoPoint;
-  kind?: "place" | "road" | "parcel" | "osm";
+  kind?: "apartment" | "park" | "childFacility" | "toilet" | "place" | "road" | "parcel";
+  source?: "kapt" | "public-data" | "vworld";
+  score?: number;
 };
 
 function kstNowParts() {
@@ -137,14 +139,10 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   async function loadSearchResults(
     searchQuery: string,
     signal?: AbortSignal,
-    broad = false,
   ): Promise<SearchResult[]> {
     const requestId = ++searchRequestRef.current;
     const response = await fetch(
-      "/api/vworld/search?q="
-        + encodeURIComponent(searchQuery.trim())
-        + "&broad="
-        + (broad ? "1" : "0"),
+      "/api/vworld/search?q=" + encodeURIComponent(searchQuery.trim()),
       signal ? { signal } : undefined,
     );
     const payload = await response.json();
@@ -193,7 +191,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setSearching(true);
     setMessage(undefined);
     try {
-      const results = await loadSearchResults(searchQuery, undefined, true);
+      const results = await loadSearchResults(searchQuery);
       setSearchResults(results);
       if (results.length === 1) chooseSearchResult(results[0]);
     } catch (error) {
@@ -211,14 +209,18 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setSearchResults([]);
     setSearchOpen(false);
     setSelectedPlaceId(undefined);
-    triggerMapView("search");
+    setWalkingRoute(undefined);
+    triggerMapView("search", result.point);
   }
 
   function searchKindLabel(kind?: SearchResult["kind"]) {
+    if (kind === "apartment") return "아파트";
+    if (kind === "park") return "공원";
+    if (kind === "childFacility") return "아동시설";
+    if (kind === "toilet") return "편의";
     if (kind === "place") return "장소";
     if (kind === "road") return "도로명";
     if (kind === "parcel") return "지번";
-    if (kind === "osm") return "보조";
     return "위치";
   }
 
@@ -229,9 +231,13 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     window.setTimeout(() => setCopiedPlaceId((current) => current === placeId ? undefined : current), 1_500);
   }
 
-  function triggerMapView(type: PlaySafeMapViewAction["type"]) {
+  function triggerMapView(
+    type: PlaySafeMapViewAction["type"],
+    point?: GeoPoint,
+  ) {
     setViewAction((current) => ({
       type,
+      point,
       nonce: (current?.nonce ?? 0) + 1,
     }));
   }
@@ -253,9 +259,17 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   );
 
   useEffect(() => {
-    if (!selected) {
+    const snapshotCenter = snapshot?.query.center;
+    const snapshotMatchesCenter = Boolean(
+      snapshotCenter
+      && Math.abs(snapshotCenter.lon - center.lon) < 0.00001
+      && Math.abs(snapshotCenter.lat - center.lat) < 0.00001,
+    );
+
+    if (!selected || !snapshotMatchesCenter) {
       setWalkingRoute(undefined);
       setRouteMessage(undefined);
+      setRouteLoading(false);
       return;
     }
 
@@ -465,10 +479,10 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     {!searching && searchResults.length === 0 && (
                       <div className="px-4 py-4">
                         <strong className="block text-[13px] font-bold leading-5 text-[#dfe7eb]">
-                          빠른 후보가 없습니다
+                          검색 결과가 없습니다
                         </strong>
                         <span className="mt-1 block text-[12px] leading-5 text-[#7e8c95]">
-                          검색 버튼을 누르면 단지명·건물명까지 넓게 찾아봅니다.
+                          단지명·건물명·도로명주소처럼 기억나는 표현으로 다시 입력해 보세요.
                         </span>
                       </div>
                     )}

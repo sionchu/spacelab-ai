@@ -13,6 +13,7 @@ export type PlaySafeTree = {
 export type PlaySafeMapViewAction = {
   type: "top" | "search" | "route";
   nonce: number;
+  point?: GeoPoint;
 };
 
 export type PlayPlace = {

@@ -434,7 +434,11 @@ export function PlaySafeMap({
     const map = mapRef.current;
     if (!map || !mapReady || !selected) return;
 
-    if (lastCameraPlaceRef.current !== selected.place.id) {
+    if (
+      viewAction?.type !== "search"
+      && viewAction?.type !== "route"
+      && lastCameraPlaceRef.current !== selected.place.id
+    ) {
       lastCameraPlaceRef.current = selected.place.id;
       map.easeTo({
         center: [selected.place.point.lon, selected.place.point.lat],
@@ -464,7 +468,7 @@ export function PlaySafeMap({
     avatarRef.current = new maplibregl.Marker({ element, anchor: "bottom" })
       .setLngLat([selected.place.point.lon, selected.place.point.lat])
       .addTo(map);
-  }, [mapReady, selected, snapshot.query.childAge]);
+  }, [mapReady, selected, snapshot.query.childAge, viewAction?.type]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -486,7 +490,7 @@ export function PlaySafeMap({
 
     const target = viewAction.type === "top"
       ? selected?.place.point ?? snapshot.query.center
-      : snapshot.query.center;
+      : viewAction.point ?? snapshot.query.center;
 
     map.easeTo({
       center: [target.lon, target.lat],

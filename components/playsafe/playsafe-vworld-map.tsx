@@ -416,7 +416,11 @@ export function PlaySafeVWorldMap({
         },
       });
 
-      if (lastCameraPlaceRef.current !== selected.place.id) {
+      if (
+        viewAction?.type !== "search"
+        && viewAction?.type !== "route"
+        && lastCameraPlaceRef.current !== selected.place.id
+      ) {
         lastCameraPlaceRef.current = selected.place.id;
         viewer.camera.flyTo({
           destination: Cesium.Cartesian3.fromDegrees(
@@ -439,7 +443,7 @@ export function PlaySafeVWorldMap({
     applyStatic();
     window.addEventListener("playsafe-vworld-ready", applyStatic);
     return () => window.removeEventListener("playsafe-vworld-ready", applyStatic);
-  }, [selectedPlaceId, snapshot]);
+  }, [selectedPlaceId, snapshot, viewAction?.type]);
 
   useEffect(() => {
     const applyTime = () => {
@@ -655,7 +659,7 @@ export function PlaySafeVWorldMap({
 
       const target = viewAction.type === "top"
         ? selected?.place.point ?? snapshot.query.center
-        : snapshot.query.center;
+        : viewAction.point ?? snapshot.query.center;
 
       viewer.camera.flyTo({
         destination: Cesium.Cartesian3.fromDegrees(
