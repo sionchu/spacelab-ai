@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useSpring } from "motion/react";
 import {
   ChevronDown,
   Clock3,
@@ -70,7 +71,40 @@ function fitTone(score: number) {
   return "text-[#ef8795]";
 }
 
+function AnimatedNumber({
+  value,
+  digits = 0,
+  suffix = "",
+  className = "",
+}: {
+  value: number;
+  digits?: number;
+  suffix?: string;
+  className?: string;
+}) {
+  const reduceMotion = useReducedMotion();
+  const valueMotion = useMotionValue(value);
+  const spring = useSpring(valueMotion, { stiffness: 240, damping: 30, mass: 0.7 });
+  const [displayValue, setDisplayValue] = useState(value);
+
+  useMotionValueEvent(spring, "change", (latest) => {
+    if (!reduceMotion) setDisplayValue(latest);
+  });
+
+  useEffect(() => {
+    valueMotion.set(value);
+    if (reduceMotion) setDisplayValue(value);
+  }, [reduceMotion, value, valueMotion]);
+
+  return (
+    <span className={className}>
+      {displayValue.toFixed(digits)}{suffix}
+    </span>
+  );
+}
+
 export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
+  const reduceMotion = useReducedMotion();
   const initial = useMemo(() => kstNowParts(), []);
   const [center, setCenter] = useState<GeoPoint>({ lon: 127.11052, lat: 37.39483 });
   const [centerLabel, setCenterLabel] = useState("판교역 인근");
@@ -302,6 +336,17 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     : originFacilities.find((item) => item.id === routeOriginId);
   const routeStartPoint = routeOriginFacility?.point ?? center;
   const routeOriginLabel = routeOriginFacility?.name ?? centerLabel;
+  const bestTimelinePoint = selected?.timeline.length
+    ? selected.timeline.reduce((best, point) => point.fitScore > best.fitScore ? point : best)
+    : undefined;
+  const betterTimeDelta = selected && bestTimelinePoint
+    ? Math.round(bestTimelinePoint.fitScore - selected.fitScore)
+    : 0;
+  const betterTimeLabel = bestTimelinePoint
+    && betterTimeDelta >= 3
+    && bestTimelinePoint.localDateTime.slice(11, 16) !== timeFromMinutes(committedMinutes)
+      ? bestTimelinePoint.localDateTime.slice(11, 16)
+      : undefined;
 
   useEffect(() => {
     const snapshotCenter = snapshot?.query.center;
@@ -461,6 +506,23 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
+        <AnimatePresence>
+          {walkingRoute && !routeLoading && walkingRoute.quality.traceStatus === "available" && (
+            <motion.div
+              initial={reduceMotion ? false : { opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, x: 8 }}
+              transition={{ duration: reduceMotion ? 0 : 0.24 }}
+              className="pointer-events-none absolute right-5 top-[246px] z-30 grid gap-1.5 rounded-xl border border-white/[0.06] bg-[#081116]/78 px-3 py-2.5 text-[11px] font-semibold text-[#a6b2b9] shadow-[0_10px_30px_rgba(0,0,0,.22)] backdrop-blur-xl max-[640px]:hidden"
+              aria-label="보행 경로 범례"
+            >
+              <span className="inline-flex items-center gap-2"><i className="size-2 rounded-full bg-[#53d6c7]" />보행전용</span>
+              <span className="inline-flex items-center gap-2"><i className="size-2 rounded-full bg-[#7f9df4]" />보도있는 도로</span>
+              <span className="inline-flex items-center gap-2"><i className="size-2 rounded-full bg-[#f2c45d]" />차도공유</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <aside className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-98px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[480px]:left-2 max-[480px]:w-[calc(100vw-16px)]">
           <div
             data-playsafe-panel-scroll
@@ -570,11 +632,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 </div>
                 <div className="mt-2">
                   {snapshot.assessments.slice(0, 3).map((assessment, index) => (
-                    <button
+                    <motion.button
+                      layout
                       key={assessment.place.id}
                       type="button"
                       onClick={() => selectPlace(assessment.place.id)}
-                      className={"flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition " + (
+                      whileTap={reduceMotion ? undefined : { scale: 0.985 }}
+                      transition={{ type: "spring", stiffness: 360, damping: 30 }}
+                      className={"flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors " + (
                         selected?.place.id === assessment.place.id
                           ? "bg-white/[0.055]"
                           : "hover:bg-white/[0.03]"
@@ -588,10 +653,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                           {assessment.place.address ? " · " + assessment.place.address : ""}
                         </span>
                       </div>
-                      <span className={"shrink-0 text-[18px] font-black tabular-nums " + fitTone(assessment.fitScore)}>
-                        {assessment.fitScore.toFixed(0)}
-                      </span>
-                    </button>
+                      <AnimatedNumber
+                        value={assessment.fitScore}
+                        className={"shrink-0 text-[18px] font-black tabular-nums " + fitTone(assessment.fitScore)}
+                      />
+                    </motion.button>
                   ))}
                 </div>
               </section>
@@ -681,61 +747,84 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
             {selected && snapshot && (
               <>
-                <section className="mt-5 border-t border-white/[0.06] pt-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#72e2d3]">
-                        {selectedIsRecommended && <Sparkles className="size-3.5" />}
-                        {selectedIsRecommended ? "선택한 장소" : `${selectedRank + 1}번째 후보`}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.section
+                    layout
+                    key={selected.place.id + ":" + analysisAt}
+                    initial={reduceMotion ? false : { opacity: 0, y: 8, filter: "blur(6px)" }}
+                    animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+                    exit={reduceMotion ? undefined : { opacity: 0, y: -5, filter: "blur(4px)" }}
+                    transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
+                    className="mt-5 border-t border-white/[0.06] pt-5"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#72e2d3]">
+                          {selectedIsRecommended && <Sparkles className="size-3.5" />}
+                          {selectedIsRecommended ? "선택한 장소" : `${selectedRank + 1}번째 후보`}
+                        </div>
+                        <h1 className="mt-1.5 break-keep text-[16px] font-bold leading-[1.3] tracking-[-0.02em]">{selected.place.name}</h1>
                       </div>
-                      <h1 className="mt-1.5 break-keep text-[16px] font-bold leading-[1.3] tracking-[-0.02em]">
-                        {selected.place.name}
-                      </h1>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className={"text-[20px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)}>
-                        {selected.fitScore.toFixed(0)}
+                      <div className="shrink-0 text-right">
+                        <AnimatedNumber value={selected.fitScore} className={"text-[20px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)} />
+                        <div className="mt-1 text-[12px] font-medium leading-5 text-[#77848d]">적합도</div>
                       </div>
-                      <div className="mt-1 text-[12px] font-medium leading-5 text-[#77848d]">적합도</div>
                     </div>
-                  </div>
 
-                  <div className="mt-4 flex items-start gap-2.5 text-[14px] leading-6 text-[#aab5bb]">
-                    <MapPin className="mt-0.5 size-4 shrink-0 text-[#6e7e87]" />
-                    <span className="min-w-0 flex-1">{selected.place.address || "주소 정보를 확인하는 중입니다."}</span>
-                    {selected.place.address && (
-                      <button
-                        type="button"
-                        onClick={() => void copyAddress(selected.place.id, selected.place.address)}
-                        className="flex shrink-0 items-center gap-1 text-[12px] font-semibold leading-5 text-[#72e2d3]"
+                    <AnimatePresence initial={false}>
+                      {walkingRoute && !routeLoading && (
+                        <motion.div
+                          key={walkingRoute.start.lon + ":" + walkingRoute.end.lon + ":" + walkingRoute.distanceM}
+                          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={reduceMotion ? undefined : { opacity: 0, y: -4 }}
+                          transition={{ duration: reduceMotion ? 0 : 0.22 }}
+                          className="mt-4 flex flex-wrap gap-2"
+                        >
+                          <span className="rounded-full bg-[#53d6c7]/10 px-2.5 py-1 text-[12px] font-bold text-[#79e4d7]">도보 <AnimatedNumber value={walkingRoute.durationMinutes} />분</span>
+                          {walkingRoute.quality.traceStatus === "available" && (
+                            <span className="rounded-full bg-[#53d6c7]/10 px-2.5 py-1 text-[12px] font-bold text-[#79e4d7]">분리 보행로 <AnimatedNumber value={walkingRoute.quality.pedestrianOnlyPct} suffix="%" /></span>
+                          )}
+                          <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[12px] font-semibold text-[#aab5bb]">예상 그늘 <AnimatedNumber value={selected.shadePct} suffix="%" /></span>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    <div className="mt-4 flex items-start gap-2.5 text-[14px] leading-6 text-[#aab5bb]">
+                      <MapPin className="mt-0.5 size-4 shrink-0 text-[#6e7e87]" />
+                      <span className="min-w-0 flex-1">{selected.place.address || "주소 정보를 확인하는 중입니다."}</span>
+                      {selected.place.address && (
+                        <button type="button" onClick={() => void copyAddress(selected.place.id, selected.place.address)} className="flex shrink-0 items-center gap-1 text-[12px] font-semibold leading-5 text-[#72e2d3]">
+                          <Copy className="size-3.5" />
+                          {copiedPlaceId === selected.place.id ? "복사됨" : "주소 복사"}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-3 gap-3">
+                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">예상 그늘</div><AnimatedNumber value={selected.shadePct} suffix="%" className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
+                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">체감온도</div><AnimatedNumber value={snapshot.weather.apparentTemperatureC} digits={1} suffix="°" className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
+                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">UV</div><AnimatedNumber value={selected.uvIndex} digits={1} className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
+                    </div>
+
+                    <p className="mt-5 text-[14px] leading-6 text-[#9aa7ae]">
+                      {selectedIsRecommended ? snapshot.recommendation?.summary : selected.reasons.slice(0, 3).join(" · ")}
+                    </p>
+
+                    {betterTimeLabel && (
+                      <motion.div
+                        key={selected.place.id + ":" + betterTimeLabel + ":" + betterTimeDelta}
+                        initial={reduceMotion ? false : { opacity: 0, scale: 0.98 }}
+                        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: [1, 1.025, 1] }}
+                        transition={{ duration: reduceMotion ? 0 : 0.8, ease: "easeOut" }}
+                        className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#d9bd63]/20 bg-[#d9bd63]/10 px-3 py-1.5 text-[12px] font-semibold text-[#e7cf82]"
                       >
-                        <Copy className="size-3.5" />
-                        {copiedPlaceId === selected.place.id ? "복사됨" : "주소 복사"}
-                      </button>
+                        <Clock3 className="size-3.5" />
+                        {betterTimeLabel}에는 지금보다 <strong className="font-black">+{betterTimeDelta}점</strong>
+                      </motion.div>
                     )}
-                  </div>
-
-                  <div className="mt-5 grid grid-cols-3 gap-3">
-                    <div>
-                      <div className="text-[13px] leading-5 text-[#7b8a93]">예상 그늘</div>
-                      <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.shadePct.toFixed(0)}%</div>
-                    </div>
-                    <div>
-                      <div className="text-[13px] leading-5 text-[#7b8a93]">체감온도</div>
-                      <div className="mt-1 text-[17px] font-bold tabular-nums">{snapshot.weather.apparentTemperatureC.toFixed(1)}°</div>
-                    </div>
-                    <div>
-                      <div className="text-[13px] leading-5 text-[#7b8a93]">UV</div>
-                      <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.uvIndex.toFixed(1)}</div>
-                    </div>
-                  </div>
-
-                  <p className="mt-5 text-[14px] leading-6 text-[#9aa7ae]">
-                    {selectedIsRecommended
-                      ? snapshot.recommendation?.summary
-                      : selected.reasons.slice(0, 3).join(" · ")}
-                  </p>
-                </section>
+                  </motion.section>
+                </AnimatePresence>
 
                 <section className="mt-5 border-t border-white/[0.06] pt-5">
                   <div className="flex items-start justify-between gap-4">
@@ -823,20 +912,27 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   )}
 
                   {walkingRoute && (
-                    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+                    <motion.div layout initial={reduceMotion ? false : { opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.24 }} className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
                       {walkingRoute.quality.traceStatus === "available" ? (
-                        <p className="text-[12px] leading-5 text-[#91a0a8]">
-                          분리 보행로 {walkingRoute.quality.pedestrianOnlyPct}%
-                          <span className="mx-1.5 text-white/20">·</span>
-                          도로부속 보도 {walkingRoute.quality.roadSidewalkPct}%
-                          <span className="mx-1.5 text-white/20">·</span>
-                          차도 공유 {walkingRoute.quality.sharedRoadPct}%
-                        </p>
+                        <>
+                          <p className="text-[12px] leading-5 text-[#91a0a8]">
+                            분리 보행로 <AnimatedNumber value={walkingRoute.quality.pedestrianOnlyPct} suffix="%" />
+                            <span className="mx-1.5 text-white/20">·</span>
+                            도로부속 보도 <AnimatedNumber value={walkingRoute.quality.roadSidewalkPct} suffix="%" />
+                            <span className="mx-1.5 text-white/20">·</span>
+                            차도 공유 <AnimatedNumber value={walkingRoute.quality.sharedRoadPct} suffix="%" />
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1.5 text-[11px] font-medium text-[#819099]">
+                            <span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-[#53d6c7]" />보행전용</span>
+                            <span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-[#7f9df4]" />보도있는 도로</span>
+                            <span className="inline-flex items-center gap-1.5"><i className="size-2 rounded-full bg-[#f2c45d]" />차도공유</span>
+                          </div>
+                        </>
                       ) : (
                         <p className="text-[12px] leading-5 text-[#d6bd73]">보도 구분 정보를 확인하지 못한 경로입니다.</p>
                       )}
-                      <p className="mt-1 text-[12px] leading-5 text-[#71818a]">{walkingRoute.note}</p>
-                    </div>
+                      <p className="mt-2 text-[12px] leading-5 text-[#71818a]">{walkingRoute.note}</p>
+                    </motion.div>
                   )}
 
                   {walkingRoute && (

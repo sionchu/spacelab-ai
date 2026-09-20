@@ -112,6 +112,24 @@ function clearPlaySafeEntities(viewer: any, prefixes = ["playsafe:"]) {
   }
 }
 
+function partialRoutePoints(points: Array<{ lon: number; lat: number }>, progress: number) {
+  if (points.length < 2) return points;
+  const clamped = Math.max(0, Math.min(1, progress));
+  const scaled = clamped * (points.length - 1);
+  const index = Math.min(points.length - 2, Math.floor(scaled));
+  const local = scaled - index;
+  const result = points.slice(0, index + 1);
+  const from = points[index];
+  const to = points[index + 1];
+  result.push({ lon: from.lon + (to.lon - from.lon) * local, lat: from.lat + (to.lat - from.lat) * local });
+  return result;
+}
+
+function routePointAtProgress(points: Array<{ lon: number; lat: number }>, progress: number) {
+  const partial = partialRoutePoints(points, progress);
+  return partial[partial.length - 1] ?? points[0];
+}
+
 export function PlaySafeVWorldMap({
   snapshot,
   selectedPlaceId,
@@ -134,6 +152,7 @@ export function PlaySafeVWorldMap({
   const viewerRef = useRef<any>(undefined);
   const clickHandlerRef = useRef<any>(undefined);
   const shadowFrameRef = useRef<number | undefined>(undefined);
+  const routeFrameRef = useRef<number | undefined>(undefined);
   const readyRef = useRef(false);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
@@ -498,9 +517,15 @@ export function PlaySafeVWorldMap({
       const Cesium = runtime.Cesium;
       if (!viewer || !Cesium) return;
 
+      if (routeFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(routeFrameRef.current);
+        routeFrameRef.current = undefined;
+      }
+
       clearPlaySafeEntities(viewer, [
         "playsafe:route-line",
         "playsafe:route-start",
+        "playsafe:route-walker",
         "playsafe:route-zone:",
         "playsafe:route-accident:",
         "playsafe:route-toilet:",
@@ -511,35 +536,84 @@ export function PlaySafeVWorldMap({
         return;
       }
 
-      const routeSegments = walkingRoute.segments.length
+      const routeSegments = (walkingRoute.segments.length
         ? walkingRoute.segments
-        : [{ kind: "unknown" as const, points: walkingRoute.points }];
+        : [{ kind: "unknown" as const, points: walkingRoute.points, distanceM: walkingRoute.distanceM }])
+        .filter((segment) => segment.points.length >= 2);
+      const segmentWeights = routeSegments.map((segment) =>
+        Math.max(1, segment.distanceM || segment.points.length - 1));
+      const totalWeight = Math.max(1, segmentWeights.reduce((sum, value) => sum + value, 0));
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      let routeProgress = reduceMotion ? 1 : 0;
+      let routeOffset = 0;
 
-      routeSegments
-        .filter((segment) => segment.points.length >= 2)
-        .forEach((segment, index) => {
-          const routePositions = Cesium.Cartesian3.fromDegreesArray(
-            segment.points.flatMap((point) => [point.lon, point.lat]),
-          );
-          const color = segment.kind === "road-sidewalk"
-            ? "#7f9df4"
-            : segment.kind === "shared-road"
-              ? "#f2c45d"
-              : segment.kind === "unknown"
-                ? "#8fa0aa"
-                : "#53d6c7";
+      routeSegments.forEach((segment, index) => {
+        const weight = segmentWeights[index];
+        const startProgress = routeOffset / totalWeight;
+        const endProgress = (routeOffset + weight) / totalWeight;
+        routeOffset += weight;
+        const color = segment.kind === "road-sidewalk"
+          ? "#7f9df4"
+          : segment.kind === "shared-road"
+            ? "#f2c45d"
+            : segment.kind === "unknown"
+              ? "#8fa0aa"
+              : "#53d6c7";
 
-          viewer.entities.add({
-            id: "playsafe:route-line:" + index,
-            polyline: {
-              positions: routePositions,
-              width: 6,
-              material: Cesium.Color.fromCssColorString(color).withAlpha(0.96),
-              clampToGround: true,
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-          });
+        viewer.entities.add({
+          id: "playsafe:route-line:" + index,
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => {
+              const span = Math.max(0.0001, endProgress - startProgress);
+              const local = (routeProgress - startProgress) / span;
+              const points = partialRoutePoints(segment.points, local);
+              return Cesium.Cartesian3.fromDegreesArray(points.flatMap((point) => [point.lon, point.lat]));
+            }, false),
+            width: 6,
+            material: Cesium.Color.fromCssColorString(color).withAlpha(0.96),
+            clampToGround: true,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
         });
+      });
+
+      if (!reduceMotion) {
+        viewer.entities.add({
+          id: "playsafe:route-walker",
+          position: new Cesium.CallbackProperty(() => {
+            const point = routePointAtProgress(walkingRoute.points, routeProgress);
+            return Cesium.Cartesian3.fromDegrees(point.lon, point.lat);
+          }, false),
+          label: {
+            text: "🧒",
+            font: "700 19px sans-serif",
+            fillColor: Cesium.Color.WHITE,
+            outlineColor: Cesium.Color.fromCssColorString("#071015"),
+            outlineWidth: 4,
+            style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+            pixelOffset: new Cesium.Cartesian2(0, -8),
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+
+        const startedAt = performance.now();
+        const durationMs = 1_050;
+        const tick = (now: number) => {
+          const raw = Math.min(1, (now - startedAt) / durationMs);
+          routeProgress = 1 - Math.pow(1 - raw, 3);
+          viewer.scene.requestRender?.();
+          if (raw < 1) {
+            routeFrameRef.current = window.requestAnimationFrame(tick);
+          } else {
+            routeFrameRef.current = undefined;
+            const walker = viewer.entities.getById?.("playsafe:route-walker");
+            if (walker) viewer.entities.remove(walker);
+            viewer.scene.requestRender?.();
+          }
+        };
+        routeFrameRef.current = window.requestAnimationFrame(tick);
+      }
 
       viewer.entities.add({
         id: "playsafe:route-start",
@@ -618,7 +692,13 @@ export function PlaySafeVWorldMap({
 
     applyRoute();
     window.addEventListener("playsafe-vworld-ready", applyRoute);
-    return () => window.removeEventListener("playsafe-vworld-ready", applyRoute);
+    return () => {
+      window.removeEventListener("playsafe-vworld-ready", applyRoute);
+      if (routeFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(routeFrameRef.current);
+        routeFrameRef.current = undefined;
+      }
+    };
   }, [walkingRoute]);
 
   useEffect(() => {

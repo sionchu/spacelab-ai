@@ -49,6 +49,47 @@ function setGeoJson(map: MapLibreMap, id: string, data: GeoJSON.GeoJSON) {
   if (source) source.setData(data);
 }
 
+function routeParts(route: PlaySafeWalkingRoute) {
+  return route.segments.length
+    ? route.segments
+    : [{ kind: "unknown" as const, points: route.points, distanceM: route.distanceM }];
+}
+
+function partialRoutePoints(points: Array<{ lon: number; lat: number }>, progress: number) {
+  if (points.length < 2) return points;
+  const clamped = Math.max(0, Math.min(1, progress));
+  const scaled = clamped * (points.length - 1);
+  const index = Math.min(points.length - 2, Math.floor(scaled));
+  const local = scaled - index;
+  const result = points.slice(0, index + 1);
+  const from = points[index];
+  const to = points[index + 1];
+  result.push({ lon: from.lon + (to.lon - from.lon) * local, lat: from.lat + (to.lat - from.lat) * local });
+  return result;
+}
+
+function routeGeoJsonAtProgress(route: PlaySafeWalkingRoute, progress: number) {
+  const parts = routeParts(route).filter((segment) => segment.points.length >= 2);
+  const weights = parts.map((segment) => Math.max(1, segment.distanceM || segment.points.length - 1));
+  const total = Math.max(1, weights.reduce((sum, value) => sum + value, 0));
+  let offset = 0;
+
+  return featureCollection(parts.flatMap((segment, index) => {
+    const weight = weights[index];
+    const localProgress = (progress * total - offset) / weight;
+    offset += weight;
+    if (localProgress <= 0) return [];
+    const points = partialRoutePoints(segment.points, localProgress);
+    if (points.length < 2) return [];
+    return [lineString(points.map((item) => [item.lon, item.lat]), { kind: segment.kind })];
+  }));
+}
+
+function routePointAtProgress(points: Array<{ lon: number; lat: number }>, progress: number) {
+  const partial = partialRoutePoints(points, progress);
+  return partial[partial.length - 1] ?? points[0];
+}
+
 export function PlaySafeMap({
   snapshot,
   selectedPlaceId,
@@ -68,6 +109,7 @@ export function PlaySafeMap({
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const avatarRef = useRef<maplibregl.Marker | null>(null);
+  const routeAnimationFrameRef = useRef<number | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -132,18 +174,10 @@ export function PlaySafeMap({
     )),
   ), [selected]);
 
-  const routeGeoJson = useMemo(() => featureCollection(
-    walkingRoute
-      ? (walkingRoute.segments.length
-          ? walkingRoute.segments
-          : [{ kind: "unknown" as const, points: walkingRoute.points }])
-        .filter((segment) => segment.points.length >= 2)
-        .map((segment) => lineString(
-          segment.points.map((item) => [item.lon, item.lat]),
-          { kind: segment.kind },
-        ))
-      : [],
-  ), [walkingRoute]);
+  const routeGeoJson = useMemo(
+    () => walkingRoute ? routeGeoJsonAtProgress(walkingRoute, 1) : featureCollection([]),
+    [walkingRoute],
+  );
 
   const routeSignalsGeoJson = useMemo(() => featureCollection([
     ...(walkingRoute?.childZones ?? []).map((item) => point(
@@ -412,6 +446,10 @@ export function PlaySafeMap({
     });
 
     return () => {
+      if (routeAnimationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(routeAnimationFrameRef.current);
+        routeAnimationFrameRef.current = undefined;
+      }
       avatarRef.current?.remove();
       avatarRef.current = null;
       setMapReady(false);
@@ -439,9 +477,54 @@ export function PlaySafeMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapReady || !map.isStyleLoaded()) return;
-    setGeoJson(map, "playsafe-route", routeGeoJson);
+
+    if (routeAnimationFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(routeAnimationFrameRef.current);
+      routeAnimationFrameRef.current = undefined;
+    }
     setGeoJson(map, "playsafe-route-signals", routeSignalsGeoJson);
-  }, [mapReady, routeGeoJson, routeSignalsGeoJson]);
+
+    if (!walkingRoute || walkingRoute.points.length < 2) {
+      setGeoJson(map, "playsafe-route", routeGeoJson);
+      return;
+    }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      setGeoJson(map, "playsafe-route", routeGeoJson);
+      avatarRef.current?.setLngLat([walkingRoute.end.lon, walkingRoute.end.lat]);
+      return;
+    }
+
+    setGeoJson(map, "playsafe-route", featureCollection([]));
+    const first = walkingRoute.points[0];
+    avatarRef.current?.setLngLat([first.lon, first.lat]);
+    const startedAt = performance.now();
+    const durationMs = 1_050;
+
+    const tick = (now: number) => {
+      const raw = Math.min(1, (now - startedAt) / durationMs);
+      const progress = 1 - Math.pow(1 - raw, 3);
+      setGeoJson(map, "playsafe-route", routeGeoJsonAtProgress(walkingRoute, progress));
+      const walker = routePointAtProgress(walkingRoute.points, progress);
+      if (walker) avatarRef.current?.setLngLat([walker.lon, walker.lat]);
+
+      if (raw < 1) {
+        routeAnimationFrameRef.current = window.requestAnimationFrame(tick);
+      } else {
+        routeAnimationFrameRef.current = undefined;
+        setGeoJson(map, "playsafe-route", routeGeoJson);
+      }
+    };
+
+    routeAnimationFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (routeAnimationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(routeAnimationFrameRef.current);
+        routeAnimationFrameRef.current = undefined;
+      }
+    };
+  }, [mapReady, routeGeoJson, routeSignalsGeoJson, walkingRoute]);
 
   useEffect(() => {
     const map = mapRef.current;
