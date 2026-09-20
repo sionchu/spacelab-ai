@@ -110,6 +110,7 @@ export function PlaySafeMap({
   const [mapReady, setMapReady] = useState(false);
   const avatarRef = useRef<maplibregl.Marker | null>(null);
   const routeAnimationFrameRef = useRef<number | undefined>(undefined);
+  const ambientAnimationFrameRef = useRef<number | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -124,9 +125,10 @@ export function PlaySafeMap({
         name: assessment.place.name,
         kind: assessment.place.kind,
         fitScore: Math.round(assessment.fitScore),
+        selected: assessment.place.id === selectedPlaceId ? 1 : 0,
       },
     )),
-  ), [snapshot.assessments]);
+  ), [selectedPlaceId, snapshot.assessments]);
 
   const treesGeoJson = useMemo(() => featureCollection(
     snapshot.trees.map((tree, index) => point(
@@ -293,6 +295,20 @@ export function PlaySafeMap({
         },
       });
 
+      map.addSource("playsafe-route-flow", { type: "geojson", data: featureCollection([]) });
+      map.addLayer({
+        id: "playsafe-route-flow",
+        type: "circle",
+        source: "playsafe-route-flow",
+        paint: {
+          "circle-radius": 4.5,
+          "circle-color": "#9af0e6",
+          "circle-stroke-color": "#071015",
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 0.95,
+        },
+      });
+
       map.addSource("playsafe-route-signals", { type: "geojson", data: routeSignalsGeoJson });
       map.addLayer({
         id: "playsafe-route-signals",
@@ -450,6 +466,10 @@ export function PlaySafeMap({
         window.cancelAnimationFrame(routeAnimationFrameRef.current);
         routeAnimationFrameRef.current = undefined;
       }
+      if (ambientAnimationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(ambientAnimationFrameRef.current);
+        ambientAnimationFrameRef.current = undefined;
+      }
       avatarRef.current?.remove();
       avatarRef.current = null;
       setMapReady(false);
@@ -525,6 +545,62 @@ export function PlaySafeMap({
       }
     };
   }, [mapReady, routeGeoJson, routeSignalsGeoJson, walkingRoute]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+
+    if (ambientAnimationFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(ambientAnimationFrameRef.current);
+      ambientAnimationFrameRef.current = undefined;
+    }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduceMotion) {
+      map.setPaintProperty("playsafe-place-halo", "circle-radius", [
+        "case", ["==", ["get", "selected"], 1], 20, 14,
+      ]);
+      map.setPaintProperty("playsafe-place-halo", "circle-opacity", [
+        "case", ["==", ["get", "selected"], 1], 0.22, 0.12,
+      ]);
+      setGeoJson(map, "playsafe-route-flow", featureCollection([]));
+      return;
+    }
+
+    const tick = (now: number) => {
+      const wave = (Math.sin(now / 520) + 1) / 2;
+      map.setPaintProperty("playsafe-place-halo", "circle-radius", [
+        "case", ["==", ["get", "selected"], 1], 18 + wave * 8, 14,
+      ]);
+      map.setPaintProperty("playsafe-place-halo", "circle-opacity", [
+        "case", ["==", ["get", "selected"], 1], 0.12 + wave * 0.16, 0.10,
+      ]);
+
+      if (walkingRoute?.points.length && walkingRoute.points.length >= 2) {
+        const progress = (now % 4_200) / 4_200;
+        const flowPoint = routePointAtProgress(walkingRoute.points, progress);
+        setGeoJson(
+          map,
+          "playsafe-route-flow",
+          flowPoint
+            ? featureCollection([point([flowPoint.lon, flowPoint.lat])])
+            : featureCollection([]),
+        );
+      } else {
+        setGeoJson(map, "playsafe-route-flow", featureCollection([]));
+      }
+
+      ambientAnimationFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    ambientAnimationFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (ambientAnimationFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(ambientAnimationFrameRef.current);
+        ambientAnimationFrameRef.current = undefined;
+      }
+    };
+  }, [mapReady, selectedPlaceId, walkingRoute]);
 
   useEffect(() => {
     const map = mapRef.current;

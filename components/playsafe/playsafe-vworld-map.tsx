@@ -153,6 +153,7 @@ export function PlaySafeVWorldMap({
   const clickHandlerRef = useRef<any>(undefined);
   const shadowFrameRef = useRef<number | undefined>(undefined);
   const routeFrameRef = useRef<number | undefined>(undefined);
+  const ambientFrameRef = useRef<number | undefined>(undefined);
   const readyRef = useRef(false);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
@@ -264,6 +265,10 @@ export function PlaySafeVWorldMap({
         window.clearInterval(viewerPollId);
       }
       readyRef.current = false;
+      if (ambientFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(ambientFrameRef.current);
+        ambientFrameRef.current = undefined;
+      }
       try {
         clickHandlerRef.current?.destroy?.();
       } catch {
@@ -281,12 +286,34 @@ export function PlaySafeVWorldMap({
   }, [onUnavailable]);
 
   useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let lastRender = 0;
+    const tick = (now: number) => {
+      if (readyRef.current && now - lastRender >= 50) {
+        viewerRef.current?.scene?.requestRender?.();
+        lastRender = now;
+      }
+      ambientFrameRef.current = window.requestAnimationFrame(tick);
+    };
+
+    ambientFrameRef.current = window.requestAnimationFrame(tick);
+    return () => {
+      if (ambientFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(ambientFrameRef.current);
+        ambientFrameRef.current = undefined;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     const applyStatic = () => {
       if (!readyRef.current) return;
       const runtime = window as VWorldWindow;
       const viewer = viewerRef.current;
       const Cesium = runtime.Cesium;
       if (!viewer || !Cesium) return;
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       clearPlaySafeEntities(viewer, [
         "playsafe:tree:",
@@ -335,7 +362,12 @@ export function PlaySafeVWorldMap({
             assessment.place.point.lat,
           ),
           point: {
-            pixelSize: isSelected ? 18 : 13,
+            pixelSize: isSelected && !reduceMotion
+              ? new Cesium.CallbackProperty(
+                  () => 18 + ((Math.sin(performance.now() / 520) + 1) / 2) * 5,
+                  false,
+                )
+              : isSelected ? 18 : 13,
             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
             color: fitColor(Cesium, assessment.fitScore),
             outlineColor: Cesium.Color.WHITE,
@@ -526,6 +558,7 @@ export function PlaySafeVWorldMap({
         "playsafe:route-line",
         "playsafe:route-start",
         "playsafe:route-walker",
+        "playsafe:route-flow",
         "playsafe:route-zone:",
         "playsafe:route-accident:",
         "playsafe:route-toilet:",
@@ -578,6 +611,23 @@ export function PlaySafeVWorldMap({
       });
 
       if (!reduceMotion) {
+        viewer.entities.add({
+          id: "playsafe:route-flow",
+          position: new Cesium.CallbackProperty(() => {
+            const progress = (performance.now() % 4_200) / 4_200;
+            const point = routePointAtProgress(walkingRoute.points, progress);
+            return Cesium.Cartesian3.fromDegrees(point.lon, point.lat);
+          }, false),
+          point: {
+            pixelSize: 8,
+            color: Cesium.Color.fromCssColorString("#9af0e6"),
+            outlineColor: Cesium.Color.fromCssColorString("#071015"),
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+
         viewer.entities.add({
           id: "playsafe:route-walker",
           position: new Cesium.CallbackProperty(() => {

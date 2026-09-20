@@ -1,3 +1,4 @@
+import { searchVWorldPlaceNearby } from "@/lib/vworld/server";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { PlayPlace, PlaySafeTree } from "@/src/playsafe";
 
@@ -163,6 +164,56 @@ function choosePlaces(items: PlayPlace[], limit: number) {
   return selected;
 }
 
+async function nearbyVWorldPlayPlaces(
+  lon: number,
+  lat: number,
+  radiusM: number,
+): Promise<PlayPlace[]> {
+  const center = { lon, lat };
+  const settled = await Promise.allSettled(
+    ["놀이터", "어린이놀이터", "어린이공원"].map((query) =>
+      searchVWorldPlaceNearby(query, center, radiusM, 40)),
+  );
+
+  const results = settled.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : []);
+  const seen = new Set<string>();
+  const output: PlayPlace[] = [];
+
+  for (const item of results) {
+    const distance = distanceM(lon, lat, item.point.lon, item.point.lat);
+    if (distance > radiusM * 1.05) continue;
+    const signature = item.point.lon.toFixed(6) + "," + item.point.lat.toFixed(6);
+    if (seen.has(signature)) continue;
+
+    const searchable = (item.title + " " + (item.category || "")).replace(/\s+/g, "");
+    if (!/(놀이터|어린이공원|어린이놀이시설|유아놀이터)/.test(searchable)) continue;
+    if (/(키즈카페|실내놀이터|실내놀이방)/.test(searchable)) continue;
+
+    seen.add(signature);
+    const kind: PlayPlace["kind"] =
+      item.title.includes("공원") && !item.title.includes("놀이터")
+        ? "park"
+        : "playground";
+
+    output.push({
+      id: "vworld-" + item.id,
+      name: item.title || (kind === "playground" ? "어린이 놀이터" : "어린이공원"),
+      kind,
+      point: item.point,
+      address: item.address || undefined,
+      distanceM: distance,
+      tags: {
+        source: "VWorld POI",
+        category: item.category || "",
+        leisure: kind === "playground" ? "playground" : "park",
+      },
+    });
+  }
+
+  return output;
+}
+
 type PlaySafeMapContext = {
   places: PlayPlace[];
   buildings: FeatureCollection<Polygon>;
@@ -188,6 +239,7 @@ async function fetchPlaySafeMapContext(
   radiusM: number,
   limit: number,
 ): Promise<PlaySafeMapContext> {
+  const vworldPlacesPromise = nearbyVWorldPlayPlaces(lon, lat, radiusM).catch(() => []);
   const url = new URL("https://api.openstreetmap.org/api/0.6/map");
   url.searchParams.set("bbox", bbox(lon, lat, radiusM));
 
@@ -240,6 +292,7 @@ async function fetchPlaySafeMapContext(
     });
   }
 
+  placeItems.push(...await vworldPlacesPromise);
   const places = choosePlaces(placeItems, limit);
   const trees: PlaySafeTree[] = [];
   for (const node of parsed.nodes.values()) {

@@ -6,6 +6,7 @@ export type AddressSearchResult = {
   address: string;
   point: GeoPoint;
   kind?: "place" | "road" | "parcel" | "osm";
+  category?: string;
 };
 
 const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
@@ -104,9 +105,61 @@ export async function searchVWorldPlace(query: string): Promise<AddressSearchRes
       address: resultAddress(item, title || query),
       point: { lon, lat },
       kind: "place",
+      category: stripHtml(item?.category || ""),
     });
   }
   return results;
+}
+
+export async function searchVWorldPlaceNearby(
+  query: string,
+  center: GeoPoint,
+  radiusM = 900,
+  limit = 40,
+): Promise<AddressSearchResult[]> {
+  const key = apiKey();
+  if (!key) return [];
+
+  const latDelta = radiusM / 111_320;
+  const lonDelta = radiusM / (111_320 * Math.max(0.2, Math.cos(center.lat * Math.PI / 180)));
+  const bbox = [
+    center.lon - lonDelta,
+    center.lat - latDelta,
+    center.lon + lonDelta,
+    center.lat + latDelta,
+  ].join(",");
+
+  const url = buildUrl("https://api.vworld.kr/req/search", {
+    service: "search",
+    request: "search",
+    version: "2.0",
+    crs: "EPSG:4326",
+    bbox,
+    size: Math.max(1, Math.min(50, limit)),
+    page: 1,
+    query,
+    type: "PLACE",
+    format: "json",
+    key,
+    domain: apiDomain(),
+  });
+  const payload = await requestJson(url);
+  if (responseStatus(payload) !== "OK") return [];
+
+  return (payload?.response?.result?.items ?? []).flatMap((item: any, index: number) => {
+    const lon = Number(item?.point?.x);
+    const lat = Number(item?.point?.y);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+    const title = stripHtml(item?.title || item?.name || query);
+    return [{
+      id: "PLACE-NEAR-" + lon + "-" + lat + "-" + index,
+      title: title || query,
+      address: resultAddress(item, title || query),
+      point: { lon, lat },
+      kind: "place" as const,
+      category: stripHtml(item?.category || ""),
+    }];
+  });
 }
 
 export async function searchVWorldAddress(query: string): Promise<AddressSearchResult[]> {

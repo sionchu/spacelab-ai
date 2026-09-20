@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
         scope: "relative-outdoor-activity-fit",
         note: "의학적 안전 판정이 아닌 상대적 환경 노출 비교입니다. 나이는 어린 아이일수록 같은 환경을 더 보수적으로 해석하는 제품 비교 휴리스틱에만 사용됩니다.",
         factors: ["apparent-temperature", "humidity", "precipitation", "uv-index", "solar-elevation", "building-shadow-sampling", "osm-tree-shadow-when-mapped", "play-area-boundary", "surface-heat-signal", "activity-duration", "age-conservatism-profile"],
-        playgroundSource: "OpenStreetMap",
+        playgroundSource: "OpenStreetMap + VWorld nearby POI",
         weatherSource: "Open-Meteo",
         buildingSource: buildings.features[0]?.properties?.source || "OpenStreetMap",
       },
