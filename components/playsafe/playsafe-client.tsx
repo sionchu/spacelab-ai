@@ -129,10 +129,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   async function loadSearchResults(
     searchQuery: string,
     signal?: AbortSignal,
+    broad = false,
   ): Promise<SearchResult[]> {
     const requestId = ++searchRequestRef.current;
     const response = await fetch(
-      "/api/vworld/search?q=" + encodeURIComponent(searchQuery.trim()),
+      "/api/vworld/search?q="
+        + encodeURIComponent(searchQuery.trim())
+        + "&broad="
+        + (broad ? "1" : "0"),
       signal ? { signal } : undefined,
     );
     const payload = await response.json();
@@ -181,7 +185,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setSearching(true);
     setMessage(undefined);
     try {
-      const results = await loadSearchResults(searchQuery);
+      const results = await loadSearchResults(searchQuery, undefined, true);
       setSearchResults(results);
       if (results.length === 1) chooseSearchResult(results[0]);
     } catch (error) {
@@ -391,10 +395,10 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     {!searching && searchResults.length === 0 && (
                       <div className="px-4 py-4">
                         <strong className="block text-[13px] font-bold leading-5 text-[#dfe7eb]">
-                          검색 결과가 없습니다
+                          빠른 후보가 없습니다
                         </strong>
                         <span className="mt-1 block text-[12px] leading-5 text-[#7e8c95]">
-                          단지명·건물명·도로명주소를 다른 순서로 입력해 보세요.
+                          검색 버튼을 누르면 단지명·건물명까지 넓게 찾아봅니다.
                         </span>
                       </div>
                     )}
@@ -408,14 +412,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                         onClick={() => chooseSearchResult(result)}
                         className="flex w-full items-start gap-3 border-b border-white/[0.05] px-4 py-3.5 text-left last:border-b-0 hover:bg-white/[0.05] focus-visible:bg-white/[0.07] focus-visible:outline-none"
                       >
-                        <span className="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] font-bold leading-4 text-[#8fa0aa]">
+                        <span className="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[12px] font-bold leading-4 text-[#8fa0aa]">
                           {searchKindLabel(result.kind)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <strong className="block truncate text-[14px] font-bold leading-5 text-white">
                             {result.title}
                           </strong>
-                          <span className="mt-1 block truncate text-[12px] leading-5 text-[#82919a]">
+                          <span className="mt-1 block truncate text-[13px] leading-5 text-[#82919a]">
                             {result.address}
                           </span>
                         </span>

@@ -350,11 +350,16 @@ export async function reverseAddress(
   }
 }
 
-export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
+export async function searchAddress(
+  query: string,
+  options: { allowNominatim?: boolean } = {},
+): Promise<AddressSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const cacheKey = trimmed.toLocaleLowerCase("ko-KR");
+  const allowNominatim = options.allowNominatim ?? true;
+  const cacheKey = (allowNominatim ? "broad:" : "suggest:")
+    + trimmed.toLocaleLowerCase("ko-KR");
   const cached = searchCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.items;
 
@@ -363,36 +368,23 @@ export async function searchAddress(query: string): Promise<AddressSearchResult[
   const all: AddressSearchResult[] = [];
 
   if (key) {
-    for (const variant of variants) {
-      try {
-        all.push(...await searchVWorldPlace(variant, key));
-      } catch (error) {
-        console.warn(
-          "[vworld] place search variant failed",
-          variant,
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-      if (dedupeSearchResults(all).length >= 6) break;
-    }
-
-    try {
-      all.push(...await searchVWorldAddress(trimmed, key));
-    } catch (error) {
-      console.warn(
-        "[vworld] address search fallback",
-        error instanceof Error ? error.message : String(error),
-      );
+    const placeVariants = variants.slice(0, 4);
+    const settled = await Promise.allSettled([
+      ...placeVariants.map((variant) => searchVWorldPlace(variant, key)),
+      searchVWorldAddress(trimmed, key),
+    ]);
+    for (const result of settled) {
+      if (result.status === "fulfilled") all.push(...result.value);
     }
   }
 
   let items = dedupeSearchResults(all);
-  if (!items.length) {
+  if (!items.length && allowNominatim) {
     const nominatimVariants = [
       ...variants.filter((variant) => variant.endsWith("아파트")),
       ...variants.filter((variant) => !variant.endsWith("아파트")),
     ];
-    for (const variant of nominatimVariants.slice(0, 4)) {
+    for (const variant of nominatimVariants.slice(0, 2)) {
       try {
         const osm = dedupeSearchResults(await searchNominatim(variant));
         if (osm.length) {
