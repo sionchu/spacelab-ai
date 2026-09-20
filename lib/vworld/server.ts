@@ -63,32 +63,39 @@ function stripHtml(value: unknown) {
 
 function searchQueryVariants(query: string) {
   const normalized = query.trim().replace(/\s+/g, " ");
-  const variants = [normalized];
   const compact = normalized.replace(/\s+/g, "");
-  if (compact !== normalized) variants.push(compact);
+  const variants: string[] = [];
+  const add = (value: string) => {
+    const next = value.trim();
+    if (next.length >= 2 && !variants.includes(next)) variants.push(next);
+  };
+
+  add(normalized);
+  add(compact);
 
   const latinHangul = compact.match(/^([A-Za-z]{2,})([가-힣].+)$/);
   if (latinHangul) {
     const [, rawBrand, rest] = latinHangul;
     const brand = rawBrand.toUpperCase();
 
-    variants.push(brand + " " + rest);
-    variants.push(rest + brand);
-    variants.push(rest);
-
     if (rest.endsWith("빌리지")) {
       const stem = rest.slice(0, -"빌리지".length);
-      variants.push(stem + brand + "빌리지");
-      if (brand === "LG") variants.push(stem + "엘지빌리지");
+      add(stem + brand + "빌리지");
+      add(stem + brand + "빌리지아파트");
+      if (brand === "LG") add(stem + "엘지빌리지");
     }
 
-    if (brand === "LG") {
-      variants.push("엘지" + rest);
-      variants.push(rest + "엘지");
-    }
+    add(brand + " " + rest);
+    add(rest);
+    if (brand === "LG") add("엘지" + rest);
   }
 
-  return Array.from(new Set(variants.filter((value) => value.length >= 2))).slice(0, 8);
+  const residentialName = variants.find((value) =>
+    /(?:빌리지|마을|타운|캐슬|자이|푸르지오|래미안|아이파크|힐스테이트)$/.test(value),
+  );
+  if (residentialName) add(residentialName + "아파트");
+
+  return variants.slice(0, 8);
 }
 
 function resultAddress(item: any, fallback: string) {
@@ -381,7 +388,11 @@ export async function searchAddress(query: string): Promise<AddressSearchResult[
 
   let items = dedupeSearchResults(all);
   if (!items.length) {
-    for (const variant of variants.slice(0, 4)) {
+    const nominatimVariants = [
+      ...variants.filter((variant) => variant.endsWith("아파트")),
+      ...variants.filter((variant) => !variant.endsWith("아파트")),
+    ];
+    for (const variant of nominatimVariants.slice(0, 4)) {
       try {
         const osm = dedupeSearchResults(await searchNominatim(variant));
         if (osm.length) {
