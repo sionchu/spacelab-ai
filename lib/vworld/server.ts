@@ -5,6 +5,8 @@ export type AddressSearchResult = {
   title: string;
   address: string;
   point: GeoPoint;
+  kind?: "place" | "road" | "parcel" | "osm";
+  category?: string;
 };
 
 const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
@@ -51,6 +53,226 @@ function responseStatus(payload: any) {
   return payload?.response?.status ?? payload?.status;
 }
 
+function stripHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function resultAddress(item: any, fallback: string) {
+  if (typeof item?.address === "string") return stripHtml(item.address);
+  return stripHtml(
+    item?.address?.road
+      || item?.address?.parcel
+      || item?.roadAddress
+      || item?.parcelAddress
+      || item?.title
+      || fallback,
+  );
+}
+
+export async function searchVWorldPlace(query: string): Promise<AddressSearchResult[]> {
+  const key = apiKey();
+  if (!key) return [];
+  const url = buildUrl("https://api.vworld.kr/req/search", {
+    service: "search",
+    request: "search",
+    version: "2.0",
+    crs: "EPSG:4326",
+    size: 8,
+    page: 1,
+    query,
+    type: "PLACE",
+    format: "json",
+    key,
+    domain: apiDomain(),
+  });
+  const payload = await requestJson(url);
+  if (responseStatus(payload) !== "OK") return [];
+
+  const results: AddressSearchResult[] = [];
+  for (const item of payload?.response?.result?.items ?? []) {
+    const lon = Number(item?.point?.x);
+    const lat = Number(item?.point?.y);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    const title = stripHtml(item?.title || item?.name || query);
+    results.push({
+      id: "PLACE-" + lon + "-" + lat + "-" + results.length,
+      title: title || query,
+      address: resultAddress(item, title || query),
+      point: { lon, lat },
+      kind: "place",
+      category: stripHtml(item?.category || ""),
+    });
+  }
+  return results;
+}
+
+export async function searchVWorldPlaceNearby(
+  query: string,
+  center: GeoPoint,
+  radiusM = 900,
+  limit = 40,
+): Promise<AddressSearchResult[]> {
+  const key = apiKey();
+  if (!key) return [];
+
+  const latDelta = radiusM / 111_320;
+  const lonDelta = radiusM / (111_320 * Math.max(0.2, Math.cos(center.lat * Math.PI / 180)));
+  const bbox = [
+    center.lon - lonDelta,
+    center.lat - latDelta,
+    center.lon + lonDelta,
+    center.lat + latDelta,
+  ].join(",");
+
+  const url = buildUrl("https://api.vworld.kr/req/search", {
+    service: "search",
+    request: "search",
+    version: "2.0",
+    crs: "EPSG:4326",
+    bbox,
+    size: Math.max(1, Math.min(50, limit)),
+    page: 1,
+    query,
+    type: "PLACE",
+    format: "json",
+    key,
+    domain: apiDomain(),
+  });
+  const payload = await requestJson(url);
+  if (responseStatus(payload) !== "OK") return [];
+
+  return (payload?.response?.result?.items ?? []).flatMap((item: any, index: number) => {
+    const lon = Number(item?.point?.x);
+    const lat = Number(item?.point?.y);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+    const title = stripHtml(item?.title || item?.name || query);
+    return [{
+      id: "PLACE-NEAR-" + lon + "-" + lat + "-" + index,
+      title: title || query,
+      address: resultAddress(item, title || query),
+      point: { lon, lat },
+      kind: "place" as const,
+      category: stripHtml(item?.category || ""),
+    }];
+  });
+}
+
+export async function searchVWorldAddress(query: string): Promise<AddressSearchResult[]> {
+  const key = apiKey();
+  if (!key) return [];
+
+  const settled = await Promise.allSettled(
+    (["ROAD", "PARCEL"] as const).map(async (category) => {
+      const url = buildUrl("https://api.vworld.kr/req/search", {
+        service: "search",
+        request: "search",
+        version: "2.0",
+        crs: "EPSG:4326",
+        size: 8,
+        page: 1,
+        query,
+        type: "ADDRESS",
+        category,
+        format: "json",
+        key,
+        domain: apiDomain(),
+      });
+      const payload = await requestJson(url);
+      if (responseStatus(payload) !== "OK") return [];
+
+      return (payload?.response?.result?.items ?? []).flatMap((item: any, index: number) => {
+        const lon = Number(item?.point?.x);
+        const lat = Number(item?.point?.y);
+        if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+        const address = resultAddress(item, query);
+        const title = stripHtml(item?.title || address || query);
+        return [{
+          id: category + "-" + lon + "-" + lat + "-" + index,
+          title: title || address,
+          address,
+          point: { lon, lat },
+          kind: category === "ROAD" ? "road" as const : "parcel" as const,
+        }];
+      });
+    }),
+  );
+
+  return settled.flatMap((result) =>
+    result.status === "fulfilled" ? result.value : []);
+}
+
+export async function searchNominatimPlace(
+  query: string,
+  limit = 6,
+  bias?: GeoPoint,
+): Promise<AddressSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const params: Record<string, string | number> = {
+    q: trimmed,
+    format: "jsonv2",
+    limit: Math.max(1, Math.min(8, limit)),
+    countrycodes: "kr",
+    addressdetails: 1,
+    "accept-language": "ko",
+  };
+  if (bias) {
+    const latSpan = 0.45;
+    const lonSpan = 0.55;
+    params.viewbox = [
+      bias.lon - lonSpan,
+      bias.lat + latSpan,
+      bias.lon + lonSpan,
+      bias.lat - latSpan,
+    ].join(",");
+    params.bounded = 0;
+  }
+
+  const url = buildUrl("https://nominatim.openstreetmap.org/search", params);
+
+  return withNominatimRateLimit(async () => {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+        Referer: "https://github.com/sionchu/spacelab-ai",
+      },
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+    });
+    if (!response.ok) return [];
+
+    const payload = await response.json() as Array<Record<string, any>>;
+    return payload.flatMap((item, index) => {
+      const lon = Number(item.lon);
+      const lat = Number(item.lat);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+
+      const displayName = String(item.display_name || "").trim();
+      const title = String(
+        item.name
+          || item.namedetails?.name
+          || displayName.split(",")[0]
+          || trimmed,
+      ).trim();
+
+      return [{
+        id: "osm-" + String(item.place_id ?? index),
+        title,
+        address: displayName || title,
+        point: { lon, lat },
+        kind: "osm" as const,
+      }];
+    });
+  });
+}
+
 async function requestJson(url: URL) {
   const response = await fetch(url, { cache: "no-store" });
   const text = await response.text();
@@ -78,14 +300,16 @@ async function requestJson(url: URL) {
   }
 }
 
-async function searchNominatim(query: string): Promise<AddressSearchResult[]> {
-  const url = buildUrl("https://nominatim.openstreetmap.org/search", {
-    q: query,
+const reverseAddressCache = new Map<string, string | undefined>();
+
+async function reverseNominatim(point: GeoPoint) {
+  const url = buildUrl("https://nominatim.openstreetmap.org/reverse", {
+    lat: point.lat,
+    lon: point.lon,
     format: "jsonv2",
-    limit: 8,
-    countrycodes: "kr",
-    "accept-language": "ko",
+    zoom: 18,
     addressdetails: 1,
+    "accept-language": "ko",
   });
 
   return withNominatimRateLimit(async () => {
@@ -96,87 +320,73 @@ async function searchNominatim(query: string): Promise<AddressSearchResult[]> {
         Referer: "https://github.com/sionchu/spacelab-ai",
       },
       signal: AbortSignal.timeout(10_000),
-      next: { revalidate: 86_400 },
+      next: { revalidate: 2_592_000 },
     });
-    if (!response.ok) throw new Error("Nominatim request failed: HTTP " + response.status);
-    const payload = await response.json() as Array<Record<string, unknown>>;
-    return payload.flatMap((item, index) => {
-      const lon = Number(item.lon);
-      const lat = Number(item.lat);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
-      const displayName = String(item.display_name || query);
-      const name = String(item.name || displayName.split(",")[0] || displayName);
-      return [{
-        id: "osm-" + String(item.place_id ?? index),
-        title: name,
-        address: displayName,
-        point: { lon, lat },
-      }];
-    });
+    if (!response.ok) return undefined;
+    const payload = await response.json() as Record<string, any>;
+    const address = payload.address ?? {};
+    const values = [
+      address.state,
+      address.city || address.county,
+      address.borough || address.city_district,
+      address.suburb || address.quarter || address.neighbourhood,
+      address.road || address.pedestrian,
+      address.house_number,
+    ].filter(Boolean).map((value: unknown) => String(value).trim());
+    const normalized = Array.from(new Set(values)).join(" ").trim();
+    if (normalized) return normalized;
+    const displayName = String(payload.display_name || "").split(",").slice(0, 6).join(" ").trim();
+    return displayName || undefined;
   });
 }
 
-function dedupeSearchResults(items: AddressSearchResult[]) {
-  const seen = new Set<string>();
-  return items.filter((item) => {
-    const keyValue = item.point.lon.toFixed(7) + "," + item.point.lat.toFixed(7);
-    if (seen.has(keyValue)) return false;
-    seen.add(keyValue);
-    return true;
-  }).slice(0, 8);
-}
-
-export async function searchAddress(query: string): Promise<AddressSearchResult[]> {
-  const trimmed = query.trim();
-  if (!trimmed) return [];
+export async function reverseAddress(
+  point: GeoPoint,
+  options: { allowNominatim?: boolean } = {},
+): Promise<string | undefined> {
+  const cacheKey = point.lon.toFixed(6) + "," + point.lat.toFixed(6);
+  if (reverseAddressCache.has(cacheKey)) return reverseAddressCache.get(cacheKey);
 
   const key = apiKey();
-  const all: AddressSearchResult[] = [];
   if (key) {
     try {
-      for (const category of ["ROAD", "PARCEL"] as const) {
-        const url = buildUrl("https://api.vworld.kr/req/search", {
-          service: "search",
-          request: "search",
-          version: "2.0",
-          crs: "EPSG:4326",
-          size: 8,
-          page: 1,
-          query: trimmed,
-          type: "ADDRESS",
-          category,
-          format: "json",
-          key,
-          domain: apiDomain(),
-        });
-        const payload = await requestJson(url);
-        if (responseStatus(payload) !== "OK") continue;
-        for (const item of payload?.response?.result?.items ?? []) {
-          const lon = Number(item?.point?.x);
-          const lat = Number(item?.point?.y);
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-          const address = String(item?.address?.road || item?.address?.parcel || item?.title || trimmed);
-          all.push({
-            id: category + "-" + lon + "-" + lat + "-" + all.length,
-            title: String(item?.title || address),
-            address,
-            point: { lon, lat },
-          });
-        }
+      const url = buildUrl("https://api.vworld.kr/req/address", {
+        service: "address",
+        request: "getaddress",
+        version: "2.0",
+        crs: "EPSG:4326",
+        type: "BOTH",
+        point: point.lon + "," + point.lat,
+        format: "json",
+        zipcode: "true",
+        simple: "false",
+        key,
+        domain: apiDomain(),
+      });
+      const payload = await requestJson(url);
+      const results = Array.isArray(payload?.response?.result) ? payload.response.result : [];
+      const road = results.find((item: any) => String(item?.type || "").toLowerCase() === "road");
+      const parcel = results.find((item: any) => String(item?.type || "").toLowerCase() === "parcel");
+      const address = String(road?.text || parcel?.text || results[0]?.text || "").trim() || undefined;
+      if (address) {
+        reverseAddressCache.set(cacheKey, address);
+        return address;
       }
     } catch (error) {
-      console.warn("[vworld] search fallback", error instanceof Error ? error.message : String(error));
+      console.warn("[vworld] reverse fallback", error instanceof Error ? error.message : String(error));
     }
   }
 
-  const vworldResults = dedupeSearchResults(all);
-  if (vworldResults.length) return vworldResults;
+  if (options.allowNominatim === false) return undefined;
 
   try {
-    return dedupeSearchResults(await searchNominatim(trimmed));
+    const address = await reverseNominatim(point);
+    reverseAddressCache.set(cacheKey, address);
+    return address;
   } catch (error) {
-    console.warn("[nominatim] search failed", error instanceof Error ? error.message : String(error));
-    return [];
+    console.warn("[nominatim] reverse failed", error instanceof Error ? error.message : String(error));
+    reverseAddressCache.set(cacheKey, undefined);
+    return undefined;
   }
 }
 

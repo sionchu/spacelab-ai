@@ -1,5 +1,5 @@
-import { WorkspaceClient } from "@/components/workspace/workspace-client";
+import { redirect } from "next/navigation";
 
 export default function HomePage() {
-  return <WorkspaceClient />;
+  redirect("/playsafe");
 }

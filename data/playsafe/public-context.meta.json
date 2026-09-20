@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-09-19T18:50:26+00:00",
+  "source": "data.go.kr nationwide standard-data download grid",
+  "datasets": {
+    "parks": {
+      "publicDataPk": 15012890,
+      "sourceRows": 18295,
+      "normalizedRows": 18294
+    },
+    "childZones": {
+      "publicDataPk": 15012891,
+      "sourceRows": 14642,
+      "normalizedRows": 14642
+    },
+    "childAccidentHotspots": {
+      "publicDataPk": 15029185,
+      "sourceRows": 12780,
+      "normalizedRows": 1743
+    },
+    "childCenters": {
+      "publicDataPk": 15129438,
+      "sourceRows": 2237,
+      "normalizedRows": 2237
+    },
+    "toilets": {
+      "publicDataPk": 15012892,
+      "sourceRows": 33820,
+      "normalizedRows": 1853
+    }
+  }
+}

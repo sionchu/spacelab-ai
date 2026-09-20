@@ -72,6 +72,17 @@ VWORLD_DOMAIN=localhost
 
 Do not expose the VWorld key through `NEXT_PUBLIC_*`.
 
+PlaySafe additionally merges the Ministry of the Interior and Safety
+Children Play Facility Safety Management System (CPF) public playground registry.
+No extra API key is required.
+
+The integration keeps operating, outdoor, non-closed facilities in installation
+place categories `A003` (urban park), `A010` (housing complex), and `A020`
+(mixed-use residential), then merges nearby duplicates with OSM/VWorld candidates
+while preserving OSM polygon geometry when available. CPF lookup centers are
+coarsened before the public registry is queried; exact-radius filtering happens
+inside the PlaySafe server.
+
 Concept View is optional and requires a server-only OpenAI key:
 
 ```bash
