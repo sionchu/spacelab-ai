@@ -389,11 +389,12 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const mobileSheetMaxHeight = isMobileSheet
     ? Math.max(360, Math.min(mobileViewportHeight * 0.82, mobileViewportHeight - 64))
     : 0;
-  const mobileCollapsedVisible = Math.min(164, mobileSheetMaxHeight);
+  const mobileCollapsedVisible = Math.min(158, mobileSheetMaxHeight);
   const mobileHalfVisible = Math.min(
     mobileSheetMaxHeight,
-    Math.max(320, mobileViewportHeight * 0.5),
+    Math.max(300, mobileViewportHeight * 0.44),
   );
+  const showMobileDiscovery = !isMobileSheet || mobileSheetState === "expanded";
   const mobileSheetSnapY: Record<MobileSheetState, number> = {
     expanded: 0,
     half: Math.max(0, mobileSheetMaxHeight - mobileHalfVisible),
@@ -647,41 +648,80 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           )}
 
           {isMobileSheet && mobileSheetState === "collapsed" && selected && snapshot && (
-            <button
-              type="button"
-              onClick={() => setMobileSheetState("half")}
-              className="block w-full px-4 pb-4 text-left"
-              aria-label="PlaySafe 상세 패널 열기"
-            >
+            <div className="px-4 pb-3">
               <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-[15px] font-bold leading-6 text-white">{selected.place.name}</div>
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {walkingRoute && (
-                      <span className="rounded-full bg-[#53d6c7]/10 px-2 py-1 text-[11px] font-bold text-[#79e4d7]">
-                        도보 {walkingRoute.durationMinutes}분
-                      </span>
-                    )}
-                    {walkingRoute?.quality.traceStatus === "available" && (
-                      <span className="rounded-full bg-[#53d6c7]/10 px-2 py-1 text-[11px] font-bold text-[#79e4d7]">
-                        분리보행로 {walkingRoute.quality.pedestrianOnlyPct}%
-                      </span>
-                    )}
-                    {betterTimeLabel && (
-                      <span className="rounded-full bg-[#d9bd63]/10 px-2 py-1 text-[11px] font-bold text-[#e7cf82]">
-                        {betterTimeLabel} +{betterTimeDelta}점
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetState("half")}
+                  className="min-w-0 flex-1 text-left"
+                  aria-label="PlaySafe 상세 패널 열기"
+                >
+                  <div className="flex items-center gap-2">
+                    <strong className="truncate text-[16px] font-bold leading-6 text-white">{selected.place.name}</strong>
+                    {selectedIsRecommended && (
+                      <span className="shrink-0 rounded-full bg-[#53d6c7]/10 px-2 py-0.5 text-[10px] font-black text-[#79e4d7]">
+                        추천
                       </span>
                     )}
                   </div>
-                </div>
-                <div className="shrink-0 text-right">
-                  <div className={"text-[22px] font-black tabular-nums " + fitTone(selected.fitScore)}>
+                  <div className="mt-1 text-[12px] font-semibold leading-5 text-[#9eabb2]">
+                    {walkingRoute
+                      ? `도보 ${walkingRoute.durationMinutes}분 · ${walkingRoute.distanceM >= 1000
+                          ? (walkingRoute.distanceM / 1000).toFixed(1) + "km"
+                          : walkingRoute.distanceM + "m"}`
+                      : `검색 위치에서 ${Math.round(selected.place.distanceM)}m`}
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetState("half")}
+                  className="shrink-0 text-right"
+                  aria-label="상세 정보 보기"
+                >
+                  <span className={"block text-[20px] font-black tabular-nums " + fitTone(selected.fitScore)}>
                     {selected.fitScore.toFixed(0)}
-                  </div>
-                  <div className="text-[11px] text-[#74838c]">상세 보기 ↑</div>
-                </div>
+                  </span>
+                  <span className="block text-[10px] text-[#74838c]">적합도</span>
+                </button>
               </div>
-            </button>
+
+              <div className="mt-1.5 flex min-w-0 items-center gap-2">
+                <MapPin className="size-3.5 shrink-0 text-[#6e7e87]" />
+                <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-[#7f8d96]">
+                  {selected.place.address || "주소 정보 없음"}
+                </span>
+                {selected.place.address && (
+                  <button
+                    type="button"
+                    onClick={() => void copyAddress(selected.place.id, selected.place.address)}
+                    className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-[#72e2d3]"
+                  >
+                    <Copy className="size-3" />
+                    {copiedPlaceId === selected.place.id ? "복사됨" : "복사"}
+                  </button>
+                )}
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2 text-[10px] font-semibold text-[#71818a]">
+                  <span>그늘 {selected.shadePct.toFixed(0)}%</span>
+                  {walkingRoute?.quality.traceStatus === "available" && (
+                    <span>· 보행로 {walkingRoute.quality.pedestrianOnlyPct}%</span>
+                  )}
+                  {betterTimeLabel && (
+                    <span className="truncate text-[#d9bd63]">· {betterTimeLabel} +{betterTimeDelta}</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={walkingRoute ? showRouteOnMap : () => triggerMapView("focus", selected.place.point)}
+                  className="shrink-0 rounded-full bg-[#53d6c7]/10 px-3 py-1.5 text-[11px] font-black text-[#79e4d7]"
+                >
+                  지도 보기
+                </button>
+              </div>
+            </div>
           )}
 
           <div
@@ -697,7 +737,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           >
             <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
               <div
-                className="relative"
+                className={"relative " + (showMobileDiscovery ? "" : "hidden")}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     setSearchOpen(false);
@@ -792,7 +832,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               </div>
 
             {snapshot && snapshot.assessments.length > 0 && (
-              <section className="mt-5">
+              <section className={"mt-5 " + (showMobileDiscovery ? "" : "hidden")}>
                 <div className="flex items-center justify-between">
                   <strong className="text-[14px] font-bold leading-6 text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
                   <span className="max-w-[180px] truncate text-[12px] leading-5 text-[#687780]">{centerLabel}</span>
@@ -831,7 +871,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             )}
 
             {snapshot?.publicContext && (
-              <details className="group mt-5 border-t border-white/[0.06] pt-4">
+              <details className={"group mt-5 border-t border-white/[0.06] pt-4 " + (showMobileDiscovery ? "" : "hidden")}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-left [&::-webkit-details-marker]:hidden">
                   <div className="min-w-0">
                     <strong className="block text-[14px] font-bold leading-6 text-[#dfe7eb]">주변 어린이 안전·편의</strong>
@@ -1207,7 +1247,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   )}
                 </section>
 
-                <section className="mt-6 bg-white/[0.035] px-4 py-4">
+                <section className={"mt-6 bg-white/[0.035] px-4 py-4 " + (showMobileDiscovery ? "" : "hidden")}>
                   <div className="flex items-center gap-4">
                     <label className="min-w-0">
                       <span className="block text-[12px] font-medium leading-5 text-[#72818a]">아이</span>
@@ -1254,7 +1294,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   )}
                 </section>
 
-                <section className="mt-6">
+                <section className={"mt-6 " + (showMobileDiscovery ? "" : "hidden")}>
                   <div className="flex items-end justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-1.5 text-[12px] font-semibold leading-5 text-[#d5b85f]">
@@ -1289,7 +1329,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </p>
                 </section>
 
-                <details className="group mt-4">
+                <details className={"group mt-4 " + (showMobileDiscovery ? "" : "hidden")}>
                   <summary className="flex cursor-pointer list-none items-center justify-between py-2 text-[13px] font-bold [&::-webkit-details-marker]:hidden">
                     <span className="flex items-center gap-2"><Clock3 className="size-4 text-[#d5b85f]" /> 시간별 변화</span>
                     <ChevronDown className="size-4 text-[#77858e] transition group-open:rotate-180" />
@@ -1318,7 +1358,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   <p className="mt-4 text-[13px] leading-6 text-[#efabb4]">{message}</p>
                 )}
 
-                <p className="mt-6 text-[13px] leading-6 text-[#697982]">
+                <p className={"mt-6 text-[13px] leading-6 text-[#697982] " + (showMobileDiscovery ? "" : "hidden")}>
                   활동 적합도는 체감온도·강수·UV·태양고도·건물/수목 그림자·활동시간을 합친 상대 비교입니다.
                   의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
                 </p>
