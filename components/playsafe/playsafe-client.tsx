@@ -25,6 +25,7 @@ type SearchResult = {
   title: string;
   address: string;
   point: GeoPoint;
+  kind?: "place" | "road" | "parcel" | "osm";
 };
 
 function kstNowParts() {
@@ -55,6 +56,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [query, setQuery] = useState("판교역");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [childAge, setChildAge] = useState(6);
   const [duration, setDuration] = useState(40);
   const [date, setDate] = useState(initial.date);
@@ -69,6 +71,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
+  const searchRequestRef = useRef(0);
   snapshotRef.current = snapshot;
   selectedRef.current = selectedPlaceId;
 
@@ -123,18 +126,67 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     return registration.dispose;
   }, []);
 
+  async function loadSearchResults(
+    searchQuery: string,
+    signal?: AbortSignal,
+  ): Promise<SearchResult[]> {
+    const requestId = ++searchRequestRef.current;
+    const response = await fetch(
+      "/api/vworld/search?q=" + encodeURIComponent(searchQuery.trim()),
+      signal ? { signal } : undefined,
+    );
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error || "위치 검색 실패");
+    if (requestId !== searchRequestRef.current) return [];
+    return payload as SearchResult[];
+  }
+
+  useEffect(() => {
+    const searchQuery = query.trim();
+    if (!searchOpen || searchQuery.length < 2) {
+      if (searchQuery.length < 2) setSearchResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      setMessage(undefined);
+      void loadSearchResults(searchQuery, controller.signal)
+        .then((results) => {
+          if (!controller.signal.aborted) setSearchResults(results);
+        })
+        .catch((error) => {
+          if (!controller.signal.aborted && error?.name !== "AbortError") {
+            setMessage(error instanceof Error ? error.message : String(error));
+            setSearchResults([]);
+          }
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, searchOpen]);
+
   async function search(event: FormEvent) {
     event.preventDefault();
-    if (!query.trim()) return;
+    const searchQuery = query.trim();
+    if (searchQuery.length < 2) return;
+    setSearchOpen(true);
     setSearching(true);
     setMessage(undefined);
     try {
-      const response = await fetch("/api/vworld/search?q=" + encodeURIComponent(query.trim()));
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.error || "위치 검색 실패");
-      setSearchResults(payload as SearchResult[]);
+      const results = await loadSearchResults(searchQuery);
+      setSearchResults(results);
+      if (results.length === 1) chooseSearchResult(results[0]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
+      setSearchResults([]);
     } finally {
       setSearching(false);
     }
@@ -145,8 +197,17 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setCenterLabel(result.address || result.title);
     setQuery(result.title);
     setSearchResults([]);
+    setSearchOpen(false);
     setSelectedPlaceId(undefined);
     triggerMapView("search");
+  }
+
+  function searchKindLabel(kind?: SearchResult["kind"]) {
+    if (kind === "place") return "장소";
+    if (kind === "road") return "도로명";
+    if (kind === "parcel") return "지번";
+    if (kind === "osm") return "보조";
+    return "위치";
   }
 
   async function copyAddress(placeId: string, address?: string) {
@@ -272,39 +333,102 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             style={{ maxHeight: "calc(100dvh - 98px)" }}
           >
             <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
-              <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
-              <Search className="size-4 shrink-0 text-[#6f7f89]" />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="동네, 공원, 주소 검색"
-                className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-[#61707a]"
-              />
-              <button disabled={searching} className="text-[13px] font-semibold leading-5 text-[#69ddd0]">
-                {searching ? "검색 중" : "검색"}
-              </button>
-            </form>
-
-            {searchResults.length > 0 && (
-              <div className="mt-2 overflow-hidden rounded-2xl bg-[#101a21]">
-                {searchResults.slice(0, 5).map((result) => (
+              <div
+                className="relative"
+                onFocus={() => setSearchOpen(true)}
+                onBlur={(event) => {
+                  if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                    setSearchOpen(false);
+                  }
+                }}
+              >
+                <form
+                  onSubmit={search}
+                  role="search"
+                  className="flex min-h-12 items-center gap-3 rounded-2xl bg-white/[0.055] px-4 py-3"
+                >
+                  <Search className="size-[18px] shrink-0 text-[#7a8992]" />
+                  <input
+                    value={query}
+                    onFocus={() => setSearchOpen(true)}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setSearchOpen(true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        setSearchOpen(false);
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    placeholder="아파트·건물·동네·주소 검색"
+                    aria-label="위치 검색"
+                    aria-autocomplete="list"
+                    aria-controls="playsafe-search-results"
+                    aria-expanded={searchOpen}
+                    className="min-w-0 flex-1 bg-transparent text-[15px] font-medium leading-6 text-white outline-none placeholder:text-[#65747d]"
+                  />
                   <button
-                    key={result.id}
-                    type="button"
-                    onClick={() => chooseSearchResult(result)}
-                    className="block w-full px-3 py-3 text-left hover:bg-white/[0.045]"
+                    disabled={searching || query.trim().length < 2}
+                    className="shrink-0 text-[14px] font-bold leading-5 text-[#69ddd0] disabled:opacity-40"
                   >
-                    <strong className="block truncate text-[13px]">{result.title}</strong>
-                    <span className="mt-1 block truncate text-[12px] leading-5 text-[#7e8c95]">{result.address}</span>
+                    {searching ? "검색 중" : "검색"}
                   </button>
-                ))}
+                </form>
+
+                {searchOpen && query.trim().length >= 2 && (
+                  <div
+                    id="playsafe-search-results"
+                    role="listbox"
+                    className="absolute left-0 right-0 top-[calc(100%+8px)] z-50 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#101a21]/98 shadow-[0_18px_48px_rgba(0,0,0,.42)] backdrop-blur-xl"
+                  >
+                    {searching && searchResults.length === 0 && (
+                      <div className="px-4 py-4 text-[13px] leading-5 text-[#8b99a2]">
+                        장소와 주소를 함께 찾는 중…
+                      </div>
+                    )}
+
+                    {!searching && searchResults.length === 0 && (
+                      <div className="px-4 py-4">
+                        <strong className="block text-[13px] font-bold leading-5 text-[#dfe7eb]">
+                          검색 결과가 없습니다
+                        </strong>
+                        <span className="mt-1 block text-[12px] leading-5 text-[#7e8c95]">
+                          단지명·건물명·도로명주소를 다른 순서로 입력해 보세요.
+                        </span>
+                      </div>
+                    )}
+
+                    {searchResults.slice(0, 6).map((result) => (
+                      <button
+                        key={result.id}
+                        type="button"
+                        role="option"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => chooseSearchResult(result)}
+                        className="flex w-full items-start gap-3 border-b border-white/[0.05] px-4 py-3.5 text-left last:border-b-0 hover:bg-white/[0.05] focus-visible:bg-white/[0.07] focus-visible:outline-none"
+                      >
+                        <span className="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[11px] font-bold leading-4 text-[#8fa0aa]">
+                          {searchKindLabel(result.kind)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <strong className="block truncate text-[14px] font-bold leading-5 text-white">
+                            {result.title}
+                          </strong>
+                          <span className="mt-1 block truncate text-[12px] leading-5 text-[#82919a]">
+                            {result.address}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
 
             {snapshot && snapshot.assessments.length > 0 && (
               <section className="mt-5">
                 <div className="flex items-center justify-between">
-                  <strong className="text-[13px] font-bold leading-5 text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
+                  <strong className="text-[14px] font-bold leading-6 text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
                   <span className="max-w-[180px] truncate text-[12px] leading-5 text-[#687780]">{centerLabel}</span>
                 </div>
                 <div className="mt-2">
@@ -321,8 +445,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     >
                       <span className="w-5 shrink-0 text-[12px] font-black text-[#6f7f88]">{index + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <strong className="block truncate text-[13px] leading-5">{assessment.place.name}</strong>
-                        <span className="mt-1 block truncate text-[12px] leading-5 text-[#74828a]">
+                        <strong className="block truncate text-[14px] leading-6">{assessment.place.name}</strong>
+                        <span className="mt-1.5 block truncate text-[13px] leading-5 text-[#7f8d96]">
                           {Math.round(assessment.place.distanceM)}m · 그늘 {assessment.shadePct.toFixed(0)}%
                           {assessment.place.address ? " · " + assessment.place.address : ""}
                         </span>
@@ -340,8 +464,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               <details className="group mt-5 border-t border-white/[0.06] pt-4">
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-left [&::-webkit-details-marker]:hidden">
                   <div className="min-w-0">
-                    <strong className="block text-[13px] font-bold leading-5 text-[#dfe7eb]">주변 어린이 안전·편의</strong>
-                    <span className="mt-1 block text-[12px] leading-5 text-[#74828a]">
+                    <strong className="block text-[14px] font-bold leading-6 text-[#dfe7eb]">주변 어린이 안전·편의</strong>
+                    <span className="mt-1.5 block text-[13px] leading-5 text-[#7f8d96]">
                       보호구역 {snapshot.publicContext.summary.childZones}곳 · CCTV {snapshot.publicContext.summary.childZoneCctvCount}대 · 어린이 사고다발 {snapshot.publicContext.summary.childAccidentHotspots}곳
                     </span>
                   </div>
@@ -439,7 +563,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-[#a5b0b7]">
+                  <div className="mt-4 flex items-start gap-2.5 text-[14px] leading-6 text-[#aab5bb]">
                     <MapPin className="mt-0.5 size-4 shrink-0 text-[#6e7e87]" />
                     <span className="min-w-0 flex-1">{selected.place.address || "주소 정보를 확인하는 중입니다."}</span>
                     {selected.place.address && (
@@ -456,20 +580,20 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
                   <div className="mt-5 grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-[12px] leading-5 text-[#70808a]">예상 그늘</div>
+                      <div className="text-[13px] leading-5 text-[#7b8a93]">예상 그늘</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.shadePct.toFixed(0)}%</div>
                     </div>
                     <div>
-                      <div className="text-[12px] leading-5 text-[#70808a]">체감온도</div>
+                      <div className="text-[13px] leading-5 text-[#7b8a93]">체감온도</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{snapshot.weather.apparentTemperatureC.toFixed(1)}°</div>
                     </div>
                     <div>
-                      <div className="text-[12px] leading-5 text-[#70808a]">UV</div>
+                      <div className="text-[13px] leading-5 text-[#7b8a93]">UV</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.uvIndex.toFixed(1)}</div>
                     </div>
                   </div>
 
-                  <p className="mt-4 text-[13px] leading-6 text-[#89979f]">
+                  <p className="mt-5 text-[14px] leading-6 text-[#9aa7ae]">
                     {selectedIsRecommended
                       ? snapshot.recommendation?.summary
                       : selected.reasons.slice(0, 3).join(" · ")}
@@ -553,7 +677,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     </div>
                   </div>
 
-                  <p className="mt-2 text-[12px] leading-5 text-[#667680]">
+                  <p className="mt-3 text-[13px] leading-6 text-[#71818a]">
                     시간을 움직이면 지도 그림자가 즉시 바뀌고, 손을 떼면 활동 적합도를 다시 계산합니다.
                   </p>
                 </section>
@@ -587,7 +711,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   <p className="mt-4 text-[13px] leading-6 text-[#efabb4]">{message}</p>
                 )}
 
-                <p className="mt-5 text-[12px] leading-5 text-[#5f6f78]">
+                <p className="mt-6 text-[13px] leading-6 text-[#697982]">
                   활동 적합도는 체감온도·강수·UV·태양고도·건물/수목 그림자·활동시간을 합친 상대 비교입니다.
                   의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
                 </p>

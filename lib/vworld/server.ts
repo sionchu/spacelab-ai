@@ -5,6 +5,7 @@ export type AddressSearchResult = {
   title: string;
   address: string;
   point: GeoPoint;
+  kind?: "place" | "road" | "parcel" | "osm";
 };
 
 const APP_USER_AGENT = "SpaceLab/0.2 (+https://github.com/sionchu/spacelab-ai)";
@@ -50,6 +51,131 @@ function buildUrl(base: string, params: Record<string, string | number | undefin
 function responseStatus(payload: any) {
   return payload?.response?.status ?? payload?.status;
 }
+
+function stripHtml(value: unknown) {
+  return String(value ?? "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function searchQueryVariants(query: string) {
+  const normalized = query.trim().replace(/\s+/g, " ");
+  const variants = [normalized];
+  const compact = normalized.replace(/\s+/g, "");
+  if (compact !== normalized) variants.push(compact);
+
+  const latinHangul = compact.match(/^([A-Za-z]{2,})([가-힣].+)$/);
+  if (latinHangul) {
+    const [, rawBrand, rest] = latinHangul;
+    const brand = rawBrand.toUpperCase();
+
+    variants.push(brand + " " + rest);
+    variants.push(rest + brand);
+    variants.push(rest);
+
+    if (rest.endsWith("빌리지")) {
+      const stem = rest.slice(0, -"빌리지".length);
+      variants.push(stem + brand + "빌리지");
+      if (brand === "LG") variants.push(stem + "엘지빌리지");
+    }
+
+    if (brand === "LG") {
+      variants.push("엘지" + rest);
+      variants.push(rest + "엘지");
+    }
+  }
+
+  return Array.from(new Set(variants.filter((value) => value.length >= 2))).slice(0, 8);
+}
+
+function resultAddress(item: any, fallback: string) {
+  if (typeof item?.address === "string") return stripHtml(item.address);
+  return stripHtml(
+    item?.address?.road
+      || item?.address?.parcel
+      || item?.roadAddress
+      || item?.parcelAddress
+      || item?.title
+      || fallback,
+  );
+}
+
+async function searchVWorldPlace(query: string, key: string): Promise<AddressSearchResult[]> {
+  const url = buildUrl("https://api.vworld.kr/req/search", {
+    service: "search",
+    request: "search",
+    version: "2.0",
+    crs: "EPSG:4326",
+    size: 8,
+    page: 1,
+    query,
+    type: "PLACE",
+    format: "json",
+    key,
+    domain: apiDomain(),
+  });
+  const payload = await requestJson(url);
+  if (responseStatus(payload) !== "OK") return [];
+
+  const results: AddressSearchResult[] = [];
+  for (const item of payload?.response?.result?.items ?? []) {
+    const lon = Number(item?.point?.x);
+    const lat = Number(item?.point?.y);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+    const title = stripHtml(item?.title || item?.name || query);
+    results.push({
+      id: "PLACE-" + lon + "-" + lat + "-" + results.length,
+      title: title || query,
+      address: resultAddress(item, title || query),
+      point: { lon, lat },
+      kind: "place",
+    });
+  }
+  return results;
+}
+
+async function searchVWorldAddress(query: string, key: string): Promise<AddressSearchResult[]> {
+  const results: AddressSearchResult[] = [];
+  for (const category of ["ROAD", "PARCEL"] as const) {
+    const url = buildUrl("https://api.vworld.kr/req/search", {
+      service: "search",
+      request: "search",
+      version: "2.0",
+      crs: "EPSG:4326",
+      size: 8,
+      page: 1,
+      query,
+      type: "ADDRESS",
+      category,
+      format: "json",
+      key,
+      domain: apiDomain(),
+    });
+    const payload = await requestJson(url);
+    if (responseStatus(payload) !== "OK") continue;
+
+    for (const item of payload?.response?.result?.items ?? []) {
+      const lon = Number(item?.point?.x);
+      const lat = Number(item?.point?.y);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
+      const address = resultAddress(item, query);
+      const title = stripHtml(item?.title || address || query);
+      results.push({
+        id: category + "-" + lon + "-" + lat + "-" + results.length,
+        title: title || address,
+        address,
+        point: { lon, lat },
+        kind: category === "ROAD" ? "road" : "parcel",
+      });
+    }
+  }
+  return results;
+}
+
+const searchCache = new Map<string, { expiresAt: number; items: AddressSearchResult[] }>();
 
 async function requestJson(url: URL) {
   const response = await fetch(url, { cache: "no-store" });
@@ -111,6 +237,7 @@ async function searchNominatim(query: string): Promise<AddressSearchResult[]> {
         title: name,
         address: displayName,
         point: { lon, lat },
+        kind: "osm" as const,
       }];
     });
   });
@@ -220,54 +347,62 @@ export async function searchAddress(query: string): Promise<AddressSearchResult[
   const trimmed = query.trim();
   if (!trimmed) return [];
 
+  const cacheKey = trimmed.toLocaleLowerCase("ko-KR");
+  const cached = searchCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.items;
+
+  const variants = searchQueryVariants(trimmed);
   const key = apiKey();
   const all: AddressSearchResult[] = [];
+
   if (key) {
-    try {
-      for (const category of ["ROAD", "PARCEL"] as const) {
-        const url = buildUrl("https://api.vworld.kr/req/search", {
-          service: "search",
-          request: "search",
-          version: "2.0",
-          crs: "EPSG:4326",
-          size: 8,
-          page: 1,
-          query: trimmed,
-          type: "ADDRESS",
-          category,
-          format: "json",
-          key,
-          domain: apiDomain(),
-        });
-        const payload = await requestJson(url);
-        if (responseStatus(payload) !== "OK") continue;
-        for (const item of payload?.response?.result?.items ?? []) {
-          const lon = Number(item?.point?.x);
-          const lat = Number(item?.point?.y);
-          if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue;
-          const address = String(item?.address?.road || item?.address?.parcel || item?.title || trimmed);
-          all.push({
-            id: category + "-" + lon + "-" + lat + "-" + all.length,
-            title: String(item?.title || address),
-            address,
-            point: { lon, lat },
-          });
-        }
+    for (const variant of variants) {
+      try {
+        all.push(...await searchVWorldPlace(variant, key));
+      } catch (error) {
+        console.warn(
+          "[vworld] place search variant failed",
+          variant,
+          error instanceof Error ? error.message : String(error),
+        );
       }
+      if (dedupeSearchResults(all).length >= 6) break;
+    }
+
+    try {
+      all.push(...await searchVWorldAddress(trimmed, key));
     } catch (error) {
-      console.warn("[vworld] search fallback", error instanceof Error ? error.message : String(error));
+      console.warn(
+        "[vworld] address search fallback",
+        error instanceof Error ? error.message : String(error),
+      );
     }
   }
 
-  const vworldResults = dedupeSearchResults(all);
-  if (vworldResults.length) return vworldResults;
-
-  try {
-    return dedupeSearchResults(await searchNominatim(trimmed));
-  } catch (error) {
-    console.warn("[nominatim] search failed", error instanceof Error ? error.message : String(error));
-    return [];
+  let items = dedupeSearchResults(all);
+  if (!items.length) {
+    for (const variant of variants.slice(0, 4)) {
+      try {
+        const osm = dedupeSearchResults(await searchNominatim(variant));
+        if (osm.length) {
+          items = osm;
+          break;
+        }
+      } catch (error) {
+        console.warn(
+          "[nominatim] search variant failed",
+          variant,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
   }
+
+  searchCache.set(cacheKey, {
+    expiresAt: Date.now() + 10 * 60_000,
+    items,
+  });
+  return items;
 }
 
 function firstBoundary(geometry: any): GeoPoint[] {
