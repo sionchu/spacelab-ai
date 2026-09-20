@@ -141,6 +141,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
   const searchRequestRef = useRef(0);
+  const preferNearestOnNextSnapshotRef = useRef(false);
   snapshotRef.current = snapshot;
   selectedRef.current = selectedPlaceId;
 
@@ -194,6 +195,13 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
         setSnapshot(next);
         setSelectedPlaceId((current) => {
           if (current && next.assessments.some((item) => item.place.id === current)) return current;
+          if (preferNearestOnNextSnapshotRef.current) {
+            preferNearestOnNextSnapshotRef.current = false;
+            const nearest = [...next.assessments].sort(
+              (a, b) => a.place.distanceM - b.place.distanceM,
+            )[0];
+            return nearest?.place.id ?? next.recommendation?.placeId ?? next.assessments[0]?.place.id;
+          }
           return next.recommendation?.placeId ?? next.assessments[0]?.place.id;
         });
       })
@@ -293,6 +301,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setQuery(result.title);
     setSearchResults([]);
     setSearchOpen(false);
+    preferNearestOnNextSnapshotRef.current = true;
     setSelectedPlaceId(undefined);
     setWalkingRoute(undefined);
     triggerMapView("search", result.point);
