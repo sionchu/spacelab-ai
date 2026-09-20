@@ -209,50 +209,58 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <header className="pointer-events-none absolute left-4 right-4 top-4 z-30 flex items-start justify-between gap-3 max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-2">
-          <div className="pointer-events-auto min-w-0 rounded-2xl bg-[#081116]/78 px-3 py-2.5 shadow-lg backdrop-blur-xl">
-            <div className="flex items-center gap-2">
-              <div className="grid size-8 shrink-0 place-items-center rounded-xl bg-[#53d6c7] text-lg text-[#071c19]">☀</div>
-              <div className="min-w-0">
-                <strong className="block text-[15px] tracking-[-0.03em]">PlaySafe</strong>
-                <span className="block max-w-[300px] truncate text-[11px] text-[#8d9aa3]">{centerLabel}</span>
-              </div>
+        <header className="pointer-events-none absolute left-5 right-5 top-5 z-30 flex items-start justify-between gap-4 max-[480px]:left-3 max-[480px]:right-3 max-[480px]:top-3">
+          <div className="pointer-events-auto flex items-center gap-3">
+            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#53d6c7] text-xl text-[#071c19] shadow-[0_8px_24px_rgba(0,0,0,.26)]">☀</div>
+            <div className="min-w-0 [text-shadow:0_2px_10px_rgba(0,0,0,.72)]">
+              <strong className="block text-[18px] font-bold leading-[1.25] tracking-[-0.025em] text-white">PlaySafe</strong>
+              <span className="mt-1 block text-[12px] leading-[1.5] tracking-[0.01em] text-white/70">아이 야외활동 지도</span>
             </div>
           </div>
 
           {snapshot && (
-            <div className="pointer-events-auto rounded-2xl bg-[#081116]/78 px-3 py-2.5 text-right shadow-lg backdrop-blur-xl">
-              <div className="text-[12px] font-semibold text-white">
-                체감 {snapshot.weather.apparentTemperatureC.toFixed(1)}°C
-                <span className="mx-2 text-[#53616a]">·</span>
-                UV {snapshot.weather.uvIndex.toFixed(1)}
-              </div>
-              <div className="mt-0.5 text-[11px] text-[#7d8992]">
-                {useAnalysisFallback ? "경량 지도 fallback" : "실시간 3D 열환경"}
-              </div>
+            <div className="pointer-events-auto flex items-center gap-2 rounded-xl border border-white/[0.06] bg-[#081116]/72 px-3 py-2 shadow-[0_8px_24px_rgba(0,0,0,.22)] backdrop-blur-xl">
+              <ThermometerSun className="size-4 text-[#f0c45c]" />
+              <span className="text-[13px] font-bold leading-none tabular-nums text-white">
+                {snapshot.weather.apparentTemperatureC.toFixed(1)}°
+              </span>
+              <span className="h-4 w-px bg-white/10" />
+              <span className="text-[12px] leading-none text-white/60">UV</span>
+              <span className="text-[13px] font-bold leading-none tabular-nums text-white">
+                {snapshot.weather.uvIndex.toFixed(1)}
+              </span>
             </div>
           )}
         </header>
 
         {snapshot && (
-          <div className="pointer-events-auto absolute right-4 top-[92px] z-30 flex flex-col gap-2 max-[640px]:right-2 max-[640px]:top-[86px]">
+          <div
+            role="group"
+            aria-label="지도 보기 조작"
+            className="pointer-events-auto absolute right-5 top-[88px] z-30 overflow-visible rounded-2xl border border-white/[0.06] bg-[#081116]/78 p-1 shadow-[0_10px_30px_rgba(0,0,0,.26)] backdrop-blur-xl max-[480px]:right-3 max-[480px]:top-[82px]"
+          >
             <button
               type="button"
+              aria-label="탑뷰"
               onClick={() => triggerMapView("top")}
-              className="flex items-center gap-2 rounded-xl bg-[#081116]/84 px-3 py-2 text-[12px] font-semibold text-[#dce5e9] shadow-lg backdrop-blur-xl hover:bg-[#101b22]"
-              title="선택한 놀이터를 위에서 보기"
+              className="group relative grid size-11 place-items-center rounded-xl text-[#72e2d3] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#72e2d3]/60"
             >
-              <MapIcon className="size-4 text-[#72e2d3]" />
-              탑뷰
+              <MapIcon className="size-[18px]" />
+              <span className="pointer-events-none absolute right-[calc(100%+8px)] whitespace-nowrap rounded-lg bg-[#071015]/92 px-2.5 py-1.5 text-[12px] font-medium leading-none text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                탑뷰
+              </span>
             </button>
+            <div className="mx-2 h-px bg-white/[0.08]" />
             <button
               type="button"
+              aria-label="검색 위치로 이동"
               onClick={() => triggerMapView("search")}
-              className="flex items-center gap-2 rounded-xl bg-[#081116]/84 px-3 py-2 text-[12px] font-semibold text-[#dce5e9] shadow-lg backdrop-blur-xl hover:bg-[#101b22]"
-              title="검색한 위치로 돌아가기"
+              className="group relative grid size-11 place-items-center rounded-xl text-[#d9bd63] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d9bd63]/60"
             >
-              <LocateFixed className="size-4 text-[#d5b85f]" />
-              검색 위치
+              <LocateFixed className="size-[18px]" />
+              <span className="pointer-events-none absolute right-[calc(100%+8px)] whitespace-nowrap rounded-lg bg-[#071015]/92 px-2.5 py-1.5 text-[12px] font-medium leading-none text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                검색 위치
+              </span>
             </button>
           </div>
         )}
@@ -263,7 +271,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             className="box-border w-full overflow-x-hidden overflow-y-auto overscroll-contain"
             style={{ maxHeight: "calc(100dvh - 98px)" }}
           >
-            <div data-playsafe-safe-area style={{ padding: "20px 24px 32px" }}>
+            <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
               <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
               <Search className="size-4 shrink-0 text-[#6f7f89]" />
               <input
@@ -272,7 +280,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 placeholder="동네, 공원, 주소 검색"
                 className="min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-[#61707a]"
               />
-              <button disabled={searching} className="text-[12px] font-semibold text-[#69ddd0]">
+              <button disabled={searching} className="text-[13px] font-semibold leading-5 text-[#69ddd0]">
                 {searching ? "검색 중" : "검색"}
               </button>
             </form>
@@ -287,25 +295,25 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     className="block w-full px-3 py-3 text-left hover:bg-white/[0.045]"
                   >
                     <strong className="block truncate text-[13px]">{result.title}</strong>
-                    <span className="mt-0.5 block truncate text-[11px] leading-5 text-[#7e8c95]">{result.address}</span>
+                    <span className="mt-1 block truncate text-[12px] leading-5 text-[#7e8c95]">{result.address}</span>
                   </button>
                 ))}
               </div>
             )}
 
             {snapshot && snapshot.assessments.length > 0 && (
-              <section className="mt-4">
+              <section className="mt-5">
                 <div className="flex items-center justify-between">
-                  <strong className="text-[12px] text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
-                  <span className="max-w-[180px] truncate text-[10px] text-[#687780]">{centerLabel}</span>
+                  <strong className="text-[13px] font-bold leading-5 text-[#dfe7eb]">추천 놀이터·공원 TOP 3</strong>
+                  <span className="max-w-[180px] truncate text-[12px] leading-5 text-[#687780]">{centerLabel}</span>
                 </div>
-                <div className="mt-1">
+                <div className="mt-2">
                   {snapshot.assessments.slice(0, 3).map((assessment, index) => (
                     <button
                       key={assessment.place.id}
                       type="button"
                       onClick={() => selectPlace(assessment.place.id)}
-                      className={"flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition " + (
+                      className={"flex w-full items-center gap-3 rounded-xl px-2 py-3 text-left transition " + (
                         selected?.place.id === assessment.place.id
                           ? "bg-white/[0.055]"
                           : "hover:bg-white/[0.03]"
@@ -313,8 +321,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     >
                       <span className="w-5 shrink-0 text-[12px] font-black text-[#6f7f88]">{index + 1}</span>
                       <div className="min-w-0 flex-1">
-                        <strong className="block truncate text-[12px]">{assessment.place.name}</strong>
-                        <span className="mt-0.5 block truncate text-[10px] text-[#74828a]">
+                        <strong className="block truncate text-[13px] leading-5">{assessment.place.name}</strong>
+                        <span className="mt-1 block truncate text-[12px] leading-5 text-[#74828a]">
                           {Math.round(assessment.place.distanceM)}m · 그늘 {assessment.shadePct.toFixed(0)}%
                           {assessment.place.address ? " · " + assessment.place.address : ""}
                         </span>
@@ -329,11 +337,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             )}
 
             {snapshot?.publicContext && (
-              <details className="group mt-3 border-t border-white/[0.06] pt-3">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-1 text-left [&::-webkit-details-marker]:hidden">
+              <details className="group mt-5 border-t border-white/[0.06] pt-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 text-left [&::-webkit-details-marker]:hidden">
                   <div className="min-w-0">
-                    <strong className="block text-[12px] text-[#dfe7eb]">주변 어린이 안전·편의</strong>
-                    <span className="mt-0.5 block text-[10px] text-[#74828a]">
+                    <strong className="block text-[13px] font-bold leading-5 text-[#dfe7eb]">주변 어린이 안전·편의</strong>
+                    <span className="mt-1 block text-[12px] leading-5 text-[#74828a]">
                       보호구역 {snapshot.publicContext.summary.childZones}곳 · CCTV {snapshot.publicContext.summary.childZoneCctvCount}대 · 어린이 사고다발 {snapshot.publicContext.summary.childAccidentHotspots}곳
                     </span>
                   </div>
@@ -343,15 +351,15 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 <div className="mt-3 space-y-4">
                   {snapshot.publicContext.childZones.length > 0 && (
                     <div>
-                      <div className="text-[11px] font-bold text-[#d5b85f]">어린이보호구역</div>
+                      <div className="text-[12px] font-bold leading-5 text-[#d5b85f]">어린이보호구역</div>
                       <div className="mt-1 divide-y divide-white/[0.05]">
                         {snapshot.publicContext.childZones.slice(0, 3).map((zone) => (
                           <div key={zone.id} className="py-2">
                             <div className="flex items-baseline justify-between gap-3">
-                              <strong className="min-w-0 truncate text-[11px]">{zone.name || zone.facilityType}</strong>
-                              <span className="shrink-0 text-[10px] text-[#83919a]">{zone.distanceM}m</span>
+                              <strong className="min-w-0 truncate text-[12px] leading-5">{zone.name || zone.facilityType}</strong>
+                              <span className="shrink-0 text-[12px] leading-5 text-[#83919a]">{zone.distanceM}m</span>
                             </div>
-                            <div className="mt-0.5 truncate text-[10px] text-[#697982]">
+                            <div className="mt-1 truncate text-[12px] leading-5 text-[#697982]">
                               {zone.facilityType || "보호구역"} · CCTV {zone.cctvCount}대{zone.roadWidth ? " · 도로폭 " + zone.roadWidth : ""}
                             </div>
                           </div>
@@ -362,15 +370,15 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
                   {snapshot.publicContext.childAccidentHotspots.length > 0 && (
                     <div>
-                      <div className="text-[11px] font-bold text-[#ef9d8b]">어린이 사고다발 참고지점</div>
+                      <div className="text-[12px] font-bold leading-5 text-[#ef9d8b]">어린이 사고다발 참고지점</div>
                       <div className="mt-1 divide-y divide-white/[0.05]">
                         {snapshot.publicContext.childAccidentHotspots.slice(0, 3).map((spot) => (
                           <div key={spot.id} className="py-2">
                             <div className="flex items-baseline justify-between gap-3">
-                              <strong className="min-w-0 truncate text-[11px]">{spot.name}</strong>
-                              <span className="shrink-0 text-[10px] text-[#83919a]">{spot.distanceM}m</span>
+                              <strong className="min-w-0 truncate text-[12px] leading-5">{spot.name}</strong>
+                              <span className="shrink-0 text-[12px] leading-5 text-[#83919a]">{spot.distanceM}m</span>
                             </div>
-                            <div className="mt-0.5 truncate text-[10px] text-[#697982]">
+                            <div className="mt-1 truncate text-[12px] leading-5 text-[#697982]">
                               {spot.year}년 {spot.accidentType} · 사고 {spot.occurrences}건 · 사상 {spot.casualties}명
                             </div>
                           </div>
@@ -380,30 +388,30 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   )}
 
                   <div>
-                    <div className="text-[11px] font-bold text-[#72e2d3]">아이와 이용할 주변 시설</div>
+                    <div className="text-[12px] font-bold leading-5 text-[#72e2d3]">아이와 이용할 주변 시설</div>
                     <div className="mt-2 grid grid-cols-3 gap-2 text-center">
                       <div>
                         <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.parks}</div>
-                        <div className="text-[10px] text-[#71808a]">공원</div>
+                        <div className="text-[12px] leading-5 text-[#71808a]">공원</div>
                       </div>
                       <div>
                         <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.childCenters}</div>
-                        <div className="text-[10px] text-[#71808a]">아동센터</div>
+                        <div className="text-[12px] leading-5 text-[#71808a]">아동센터</div>
                       </div>
                       <div>
                         <div className="text-[17px] font-black tabular-nums">{snapshot.publicContext.summary.childFriendlyToilets}</div>
-                        <div className="text-[10px] text-[#71808a]">어린이 편의 화장실</div>
+                        <div className="text-[12px] leading-5 text-[#71808a]">어린이 편의 화장실</div>
                       </div>
                     </div>
                   </div>
 
                   {snapshot.publicContext.toilets[0] && (
-                    <div className="text-[10px] leading-4 text-[#80909a]">
+                    <div className="text-[12px] leading-5 text-[#80909a]">
                       가까운 어린이 편의 화장실 · {snapshot.publicContext.toilets[0].name} · {snapshot.publicContext.toilets[0].distanceM}m
                     </div>
                   )}
 
-                  <p className="text-[10px] leading-4 text-[#586871]">
+                  <p className="text-[12px] leading-5 text-[#586871]">
                     공공데이터포털 전국 표준데이터 스냅샷을 검색 위치 기준으로 잘라 표시합니다. 보호구역 정보는 실제 보행 경로 안전도 판정이 아니라 주변 안전 인프라 참고 정보입니다.
                   </p>
                 </div>
@@ -412,7 +420,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
             {selected && snapshot && (
               <>
-                <section className="mt-4 border-t border-white/[0.06] pt-4">
+                <section className="mt-5 border-t border-white/[0.06] pt-5">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#72e2d3]">
@@ -427,18 +435,18 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       <div className={"text-[20px] font-black leading-none tabular-nums " + fitTone(selected.fitScore)}>
                         {selected.fitScore.toFixed(0)}
                       </div>
-                      <div className="mt-1 text-[10px] font-medium text-[#77848d]">적합도</div>
+                      <div className="mt-1 text-[12px] font-medium leading-5 text-[#77848d]">적합도</div>
                     </div>
                   </div>
 
-                  <div className="mt-3 flex items-start gap-2 text-[12px] leading-5 text-[#a5b0b7]">
+                  <div className="mt-3 flex items-start gap-2 text-[13px] leading-5 text-[#a5b0b7]">
                     <MapPin className="mt-0.5 size-4 shrink-0 text-[#6e7e87]" />
                     <span className="min-w-0 flex-1">{selected.place.address || "주소 정보를 확인하는 중입니다."}</span>
                     {selected.place.address && (
                       <button
                         type="button"
                         onClick={() => void copyAddress(selected.place.id, selected.place.address)}
-                        className="flex shrink-0 items-center gap-1 text-[11px] font-semibold text-[#72e2d3]"
+                        className="flex shrink-0 items-center gap-1 text-[12px] font-semibold leading-5 text-[#72e2d3]"
                       >
                         <Copy className="size-3.5" />
                         {copiedPlaceId === selected.place.id ? "복사됨" : "주소 복사"}
@@ -448,20 +456,20 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
                   <div className="mt-5 grid grid-cols-3 gap-3">
                     <div>
-                      <div className="text-[11px] text-[#70808a]">예상 그늘</div>
+                      <div className="text-[12px] leading-5 text-[#70808a]">예상 그늘</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.shadePct.toFixed(0)}%</div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-[#70808a]">체감온도</div>
+                      <div className="text-[12px] leading-5 text-[#70808a]">체감온도</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{snapshot.weather.apparentTemperatureC.toFixed(1)}°</div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-[#70808a]">UV</div>
+                      <div className="text-[12px] leading-5 text-[#70808a]">UV</div>
                       <div className="mt-1 text-[17px] font-bold tabular-nums">{selected.uvIndex.toFixed(1)}</div>
                     </div>
                   </div>
 
-                  <p className="mt-4 text-[12px] leading-5 text-[#89979f]">
+                  <p className="mt-4 text-[13px] leading-6 text-[#89979f]">
                     {selectedIsRecommended
                       ? snapshot.recommendation?.summary
                       : selected.reasons.slice(0, 3).join(" · ")}
@@ -471,7 +479,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 <section className="mt-6 bg-white/[0.035] px-4 py-4">
                   <div className="flex items-center gap-4">
                     <label className="min-w-0">
-                      <span className="block text-[11px] font-medium text-[#72818a]">아이</span>
+                      <span className="block text-[12px] font-medium leading-5 text-[#72818a]">아이</span>
                       <select
                         value={childAge}
                         onChange={(event) => setChildAge(Number(event.target.value))}
@@ -484,14 +492,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     </label>
 
                     <div className="ml-auto">
-                      <span className="block text-right text-[11px] font-medium text-[#72818a]">활동시간</span>
+                      <span className="block text-right text-[12px] font-medium leading-5 text-[#72818a]">활동시간</span>
                       <div className="mt-1 flex gap-1">
                         {[20, 40, 60].map((value) => (
                           <button
                             key={value}
                             type="button"
                             onClick={() => setDuration(value)}
-                            className={"rounded-lg px-3 py-1.5 text-[12px] font-bold transition " + (
+                            className={"rounded-lg px-3 py-2 text-[13px] font-bold leading-5 transition " + (
                               duration === value ? "bg-[#1c3933] text-[#78e2d5]" : "text-[#86949d] hover:bg-white/5"
                             )}
                           >
@@ -504,11 +512,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
                   {ageProfile && (
                     <details className="group mt-3">
-                      <summary className="flex cursor-pointer list-none items-center justify-between text-[12px] font-semibold text-[#93a2aa] [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] font-semibold leading-5 text-[#93a2aa] [&::-webkit-details-marker]:hidden">
                         왜 아이 나이가 필요한가요?
                         <ChevronDown className="size-4 transition group-open:rotate-180" />
                       </summary>
-                      <p className="mt-2 text-[12px] leading-5 text-[#75848d]">
+                      <p className="mt-2 text-[13px] leading-6 text-[#75848d]">
                         {ageProfile.rationale}. 나이는 실제 열환경을 바꾸지 않고 같은 장소를 얼마나 보수적으로 평가할지만 조정합니다.
                       </p>
                     </details>
@@ -518,16 +526,16 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 <section className="mt-6">
                   <div className="flex items-end justify-between gap-3">
                     <div>
-                      <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#d5b85f]">
+                      <div className="flex items-center gap-1.5 text-[12px] font-semibold leading-5 text-[#d5b85f]">
                         <ThermometerSun className="size-3.5" /> 방문 시간
                       </div>
-                      <div className="mt-1 text-[24px] font-black tabular-nums">{timeFromMinutes(minutes)} KST</div>
+                      <div className="mt-1 text-[26px] font-bold leading-[1.25] tabular-nums">{timeFromMinutes(minutes)} KST</div>
                     </div>
                     <input
                       type="date"
                       value={date}
                       onChange={(event) => setDate(event.target.value)}
-                      className="w-[124px] bg-transparent text-right text-[12px] text-[#99a7af] outline-none"
+                      className="w-[132px] bg-transparent text-right text-[13px] leading-5 text-[#99a7af] outline-none"
                     />
                   </div>
 
@@ -540,12 +548,12 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       onValueChange={(value) => setMinutes(value[0] ?? minutes)}
                       onValueCommit={(value) => setCommittedMinutes(value[0] ?? minutes)}
                     />
-                    <div className="mt-2 flex justify-between text-[11px] text-[#64737c]">
+                    <div className="mt-2 flex justify-between text-[12px] leading-5 text-[#64737c]">
                       <span>09:00</span><span>19:00</span>
                     </div>
                   </div>
 
-                  <p className="mt-2 text-[11px] leading-5 text-[#667680]">
+                  <p className="mt-2 text-[12px] leading-5 text-[#667680]">
                     시간을 움직이면 지도 그림자가 즉시 바뀌고, 손을 떼면 활동 적합도를 다시 계산합니다.
                   </p>
                 </section>
@@ -557,7 +565,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </summary>
                   <div className="mt-2 grid gap-3">
                     {selected.timeline.map((point) => (
-                      <div key={point.localDateTime} className="grid grid-cols-[44px_1fr_32px_50px] items-center gap-2 text-[11px]">
+                      <div key={point.localDateTime} className="grid grid-cols-[48px_1fr_36px_54px] items-center gap-3 text-[12px] leading-5">
                         <span className="text-[#8d9ba6]">{point.localDateTime.slice(11, 16)}</span>
                         <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
                           <div className="h-full rounded-full bg-[#53d6c7]" style={{ width: `${Math.max(3, point.fitScore)}%` }} />
@@ -570,16 +578,16 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 </details>
 
                 {vworldIssue && (
-                  <p className="mt-5 text-[11px] leading-5 text-[#d6bd73]">
+                  <p className="mt-5 text-[12px] leading-5 text-[#d6bd73]">
                     VWorld를 불러오지 못해 경량 지도로 표시하고 있습니다.
                   </p>
                 )}
 
                 {message && (
-                  <p className="mt-4 text-[12px] leading-5 text-[#efabb4]">{message}</p>
+                  <p className="mt-4 text-[13px] leading-6 text-[#efabb4]">{message}</p>
                 )}
 
-                <p className="mt-5 text-[11px] leading-5 text-[#5f6f78]">
+                <p className="mt-5 text-[12px] leading-5 text-[#5f6f78]">
                   활동 적합도는 체감온도·강수·UV·태양고도·건물/수목 그림자·활동시간을 합친 상대 비교입니다.
                   의료적 안전 판정이나 실제 바닥 표면온도 측정이 아닙니다.
                 </p>
@@ -590,7 +598,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
         </aside>
 
         {loading && snapshot && (
-          <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[11px] text-[#93a1aa] backdrop-blur-xl max-[640px]:right-2">
+          <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[12px] leading-5 text-[#93a1aa] backdrop-blur-xl max-[640px]:right-2">
             조건을 다시 계산하는 중…
           </div>
         )}
