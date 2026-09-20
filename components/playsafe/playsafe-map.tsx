@@ -133,8 +133,15 @@ export function PlaySafeMap({
   ), [selected]);
 
   const routeGeoJson = useMemo(() => featureCollection(
-    walkingRoute?.points.length
-      ? [lineString(walkingRoute.points.map((item) => [item.lon, item.lat]))]
+    walkingRoute
+      ? (walkingRoute.segments.length
+          ? walkingRoute.segments
+          : [{ kind: "unknown" as const, points: walkingRoute.points }])
+        .filter((segment) => segment.points.length >= 2)
+        .map((segment) => lineString(
+          segment.points.map((item) => [item.lon, item.lat]),
+          { kind: segment.kind },
+        ))
       : [],
   ), [walkingRoute]);
 
@@ -238,7 +245,14 @@ export function PlaySafeMap({
         type: "line",
         source: "playsafe-route",
         paint: {
-          "line-color": "#53d6c7",
+          "line-color": [
+            "match",
+            ["get", "kind"],
+            "road-sidewalk", "#7f9df4",
+            "shared-road", "#f2c45d",
+            "unknown", "#8fa0aa",
+            "#53d6c7",
+          ],
           "line-width": 5,
           "line-opacity": 0.92,
           "line-blur": 0.25,

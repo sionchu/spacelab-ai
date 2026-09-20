@@ -823,6 +823,23 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   )}
 
                   {walkingRoute && (
+                    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+                      {walkingRoute.quality.traceStatus === "available" ? (
+                        <p className="text-[12px] leading-5 text-[#91a0a8]">
+                          분리 보행로 {walkingRoute.quality.pedestrianOnlyPct}%
+                          <span className="mx-1.5 text-white/20">·</span>
+                          도로부속 보도 {walkingRoute.quality.roadSidewalkPct}%
+                          <span className="mx-1.5 text-white/20">·</span>
+                          차도 공유 {walkingRoute.quality.sharedRoadPct}%
+                        </p>
+                      ) : (
+                        <p className="text-[12px] leading-5 text-[#d6bd73]">보도 구분 정보를 확인하지 못한 경로입니다.</p>
+                      )}
+                      <p className="mt-1 text-[12px] leading-5 text-[#71818a]">{walkingRoute.note}</p>
+                    </div>
+                  )}
+
+                  {walkingRoute && (
                     <>
                       <div className="mt-4 grid grid-cols-3 gap-4">
                         <div>

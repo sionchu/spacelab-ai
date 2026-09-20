@@ -511,20 +511,35 @@ export function PlaySafeVWorldMap({
         return;
       }
 
-      const routePositions = Cesium.Cartesian3.fromDegreesArray(
-        walkingRoute.points.flatMap((point) => [point.lon, point.lat]),
-      );
+      const routeSegments = walkingRoute.segments.length
+        ? walkingRoute.segments
+        : [{ kind: "unknown" as const, points: walkingRoute.points }];
 
-      viewer.entities.add({
-        id: "playsafe:route-line",
-        polyline: {
-          positions: routePositions,
-          width: 6,
-          material: Cesium.Color.fromCssColorString("#53d6c7").withAlpha(0.96),
-          clampToGround: true,
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      });
+      routeSegments
+        .filter((segment) => segment.points.length >= 2)
+        .forEach((segment, index) => {
+          const routePositions = Cesium.Cartesian3.fromDegreesArray(
+            segment.points.flatMap((point) => [point.lon, point.lat]),
+          );
+          const color = segment.kind === "road-sidewalk"
+            ? "#7f9df4"
+            : segment.kind === "shared-road"
+              ? "#f2c45d"
+              : segment.kind === "unknown"
+                ? "#8fa0aa"
+                : "#53d6c7";
+
+          viewer.entities.add({
+            id: "playsafe:route-line:" + index,
+            polyline: {
+              positions: routePositions,
+              width: 6,
+              material: Cesium.Color.fromCssColorString(color).withAlpha(0.96),
+              clampToGround: true,
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+          });
+        });
 
       viewer.entities.add({
         id: "playsafe:route-start",
