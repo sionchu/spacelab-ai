@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import type { GeoPoint } from "@/src/types";
+import { searchChildFacilities } from "@/lib/server/playsafe-child-facilities";
 import {
   searchNominatimPlace,
   searchVWorldAddress,
@@ -13,6 +14,8 @@ export type PlaySafeSearchKind =
   | "apartment"
   | "park"
   | "childFacility"
+  | "daycare"
+  | "kindergarten"
   | "toilet"
   | "place"
   | "road"
@@ -24,7 +27,7 @@ export type PlaySafeSearchResult = {
   address: string;
   point: GeoPoint;
   kind: PlaySafeSearchKind;
-  source: "kapt" | "public-data" | "vworld" | "osm";
+  source: "kapt" | "public-data" | "child-info" | "vworld" | "osm";
   score: number;
 };
 type ApartmentEntry = {
@@ -97,6 +100,45 @@ function brandCore(value: string) {
   return { brand: "", core: stripResidenceSuffix(value) };
 }
 
+const RESIDENCE_BRAND_TOKENS = [
+  "힐스테이트",
+  "푸르지오",
+  "래미안",
+  "아이파크",
+  "롯데캐슬",
+  "더샵",
+  "e편한세상",
+  "자이",
+  "센트레빌",
+  "위브",
+  "한라비발디",
+  "호반베르디움",
+  "리슈빌",
+] as const;
+
+function residenceSignature(value: string) {
+  let core = stripResidenceSuffix(value);
+  const brands: string[] = [];
+
+  for (const token of RESIDENCE_BRAND_TOKENS) {
+    const normalizedToken = normalizeSearchText(token);
+    if (!normalizedToken || !core.includes(normalizedToken)) continue;
+    brands.push(normalizedToken);
+    core = core.replaceAll(normalizedToken, "");
+  }
+
+  const simpleBrand = brandCore(core);
+  if (simpleBrand.brand) {
+    brands.push(simpleBrand.brand);
+    core = simpleBrand.core;
+  }
+
+  return {
+    core,
+    brands: Array.from(new Set(brands)).sort().join("|"),
+  };
+}
+
 function bigrams(value: string) {
   if (value.length < 2) return [value];
   const items: string[] = [];
@@ -132,6 +174,8 @@ function candidateScore(
 
   const queryCore = brandCore(queryKey);
   const titleCore = brandCore(titleKey);
+  const queryResidence = residenceSignature(queryKey);
+  const titleResidence = residenceSignature(titleKey);
   let score = baseScore;
 
   if (titleKey === queryKey) score += 900;
@@ -145,6 +189,15 @@ function candidateScore(
   ) {
     score += 820;
   }
+  if (
+    queryResidence.brands
+    && queryResidence.brands === titleResidence.brands
+    && queryResidence.core
+    && queryResidence.core === titleResidence.core
+  ) {
+    score += 980;
+  }
+
   const candidateRatio = titleKey.length / Math.max(1, queryKey.length);
   if (titleKey.startsWith(queryKey)) score += 320;
   if (queryKey.startsWith(titleKey) && candidateRatio >= 0.65) score += 150;
@@ -399,6 +452,9 @@ function fromProvider(
   const baseScore = source === "osm"
     ? (kind === "place" ? 135 : kind === "road" ? 120 : 112)
     : (kind === "place" ? 105 : kind === "road" ? 95 : 88);
+  const addressForScore = normalizeSearchText(
+    item.address.replace(item.title, " "),
+  );
   return {
     id: source + ":" + item.id,
     title: item.title,
@@ -409,8 +465,31 @@ function fromProvider(
     score: candidateScore(
       query,
       normalizeSearchText(item.title),
-      normalizeSearchText(item.address),
+      addressForScore,
       baseScore,
+    ),
+  };
+}
+
+function fromChildFacility(
+  query: string,
+  item: Awaited<ReturnType<typeof searchChildFacilities>>[number],
+): PlaySafeSearchResult {
+  const kind: PlaySafeSearchKind = item.kind === "daycare"
+    ? "daycare"
+    : "kindergarten";
+  return {
+    id: "child-info:" + item.id,
+    title: item.name,
+    address: item.address,
+    point: item.point,
+    kind,
+    source: "child-info",
+    score: candidateScore(
+      query,
+      normalizeSearchText(item.name),
+      normalizeSearchText(item.address),
+      155,
     ),
   };
 }
@@ -425,13 +504,12 @@ function distanceMeters(a: GeoPoint, b: GeoPoint) {
 function proximityScore(point: GeoPoint, bias?: GeoPoint) {
   if (!bias) return 0;
   const distance = distanceMeters(point, bias);
-  if (distance <= 1_000) return 2_200;
-  if (distance <= 3_000) return 1_700;
-  if (distance <= 10_000) return 1_100;
-  if (distance <= 30_000) return 500;
+  if (distance <= 1_000) return 1_600;
+  if (distance <= 3_000) return 1_200;
+  if (distance <= 10_000) return 800;
+  if (distance <= 30_000) return 350;
   if (distance <= 80_000) return 100;
-  if (distance <= 120_000) return -500;
-  return -1_500;
+  return 0;
 }
 function semanticallySame(a: PlaySafeSearchResult, b: PlaySafeSearchResult) {
   const aKey = normalizeSearchText(a.title);
@@ -502,11 +580,13 @@ export async function searchPlaySafePlaces(
     ? apartmentMatches.slice(0, apartmentIsAmbiguous ? 3 : 1)
     : [];
 
+  const shouldSearchChildFacilities = /(?:어린이집|유치원|유아|키즈)/.test(trimmed);
   const [
     resolvedApartments,
     placeSettled,
     addressResults,
     osmResults,
+    childFacilityResults,
   ] = await Promise.all([
     Promise.all(
       apartmentsToResolve.map(({ item, score }) =>
@@ -518,7 +598,10 @@ export async function searchPlaySafePlaces(
     searchVWorldAddress(trimmed).catch(() => []),
     apartmentIsStrong
       ? Promise.resolve([])
-      : searchNominatimPlace(trimmed, 8).catch(() => []),
+      : searchNominatimPlace(trimmed, 8, bias).catch(() => []),
+    shouldSearchChildFacilities
+      ? searchChildFacilities(trimmed, 5, bias).catch(() => [])
+      : Promise.resolve([]),
   ]);
 
   const vworldItems: AddressSearchResult[] = [];
@@ -532,6 +615,7 @@ export async function searchPlaySafePlaces(
       (item): item is PlaySafeSearchResult => Boolean(item),
     ),
     ...publicResults,
+    ...childFacilityResults.map((item) => fromChildFacility(trimmed, item)),
     ...vworldItems.map((item) => fromProvider(trimmed, item, "vworld")),
     ...osmResults.map((item) => fromProvider(trimmed, item, "osm")),
   ].map((item) => ({

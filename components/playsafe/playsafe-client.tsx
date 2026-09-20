@@ -30,9 +30,23 @@ type SearchResult = {
   title: string;
   address: string;
   point: GeoPoint;
-  kind?: "apartment" | "park" | "childFacility" | "toilet" | "place" | "road" | "parcel";
-  source?: "kapt" | "public-data" | "vworld" | "osm";
+  kind?: "apartment" | "park" | "childFacility" | "daycare" | "kindergarten" | "toilet" | "place" | "road" | "parcel";
+  source?: "kapt" | "public-data" | "child-info" | "vworld" | "osm";
   score?: number;
+};
+
+type RouteOriginFacility = {
+  id: string;
+  name: string;
+  kind: "daycare" | "kindergarten";
+  establishmentType: string;
+  address: string;
+  point: GeoPoint;
+  distanceM: number;
+  phone: string;
+  schoolVehicle: boolean;
+  suspended: boolean;
+  closed: boolean;
 };
 
 function kstNowParts() {
@@ -78,6 +92,9 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [walkingRoute, setWalkingRoute] = useState<PlaySafeWalkingRoute>();
   const [routeLoading, setRouteLoading] = useState(false);
   const [routeMessage, setRouteMessage] = useState<string>();
+  const [routeOriginId, setRouteOriginId] = useState("search");
+  const [originFacilities, setOriginFacilities] = useState<RouteOriginFacility[]>([]);
+  const [originLoading, setOriginLoading] = useState(false);
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -136,6 +153,37 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     return registration.dispose;
   }, []);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      lon: String(center.lon),
+      lat: String(center.lat),
+      radiusKm: "2",
+    });
+
+    setRouteOriginId("search");
+    setOriginFacilities([]);
+    setOriginLoading(true);
+
+    void fetch("/api/playsafe/origins?" + params, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.detail || payload?.error || "출발지 후보 조회 실패");
+        return payload as RouteOriginFacility[];
+      })
+      .then((items) => {
+        if (!controller.signal.aborted) setOriginFacilities(items);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setOriginFacilities([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setOriginLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [center.lat, center.lon]);
+
   async function loadSearchResults(
     searchQuery: string,
     signal?: AbortSignal,
@@ -190,6 +238,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     if (kind === "apartment") return "아파트";
     if (kind === "park") return "공원";
     if (kind === "childFacility") return "아동시설";
+    if (kind === "daycare") return "어린이집";
+    if (kind === "kindergarten") return "유치원";
     if (kind === "toilet") return "편의";
     if (kind === "place") return "장소";
     if (kind === "road") return "도로명";
@@ -217,7 +267,24 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
   function selectPlace(placeId: string) {
     setSelectedPlaceId(placeId);
-    setViewAction(undefined);
+    const assessment = snapshotRef.current?.assessments.find(
+      (item) => item.place.id === placeId,
+    );
+    if (assessment) {
+      triggerMapView("focus", assessment.place.point);
+    } else {
+      setViewAction(undefined);
+    }
+  }
+
+  function selectRouteOrigin(originId: string) {
+    setRouteOriginId(originId);
+    if (originId === "search") {
+      triggerMapView("search", center);
+      return;
+    }
+    const facility = originFacilities.find((item) => item.id === originId);
+    if (facility) triggerMapView("focus", facility.point);
   }
 
   const selected = snapshot?.assessments.find((item) => item.place.id === selectedPlaceId)
@@ -230,6 +297,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const selectedIsRecommended = Boolean(
     selected && snapshot?.recommendation?.placeId === selected.place.id,
   );
+  const routeOriginFacility = routeOriginId === "search"
+    ? undefined
+    : originFacilities.find((item) => item.id === routeOriginId);
+  const routeStartPoint = routeOriginFacility?.point ?? center;
+  const routeOriginLabel = routeOriginFacility?.name ?? centerLabel;
 
   useEffect(() => {
     const snapshotCenter = snapshot?.query.center;
@@ -248,8 +320,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
     const controller = new AbortController();
     const params = new URLSearchParams({
-      fromLon: String(center.lon),
-      fromLat: String(center.lat),
+      fromLon: String(routeStartPoint.lon),
+      fromLat: String(routeStartPoint.lat),
       toLon: String(selected.place.point.lon),
       toLat: String(selected.place.point.lat),
     });
@@ -281,6 +353,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   }, [
     center.lat,
     center.lon,
+    routeStartPoint.lat,
+    routeStartPoint.lon,
     selected?.place.id,
     selected?.place.point.lat,
     selected?.place.point.lon,
@@ -670,19 +744,67 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                         <Footprints className="size-4 text-[#9bd4a3]" />
                         가는 길
                       </div>
+                      <div className="mt-3">
+                        <label className="block text-[12px] font-semibold leading-5 text-[#7f8d96]" htmlFor="playsafe-route-origin">
+                          출발지
+                        </label>
+                        <select
+                          id="playsafe-route-origin"
+                          value={routeOriginId}
+                          disabled={originLoading}
+                          onChange={(event) => selectRouteOrigin(event.target.value)}
+                          className="mt-1.5 w-full rounded-xl border border-white/[0.06] bg-white/[0.045] px-3 py-2.5 text-[13px] font-medium leading-5 text-white outline-none focus:border-[#72e2d3]/40 disabled:opacity-50"
+                        >
+                          <option value="search">검색 위치 · {centerLabel}</option>
+                          {originFacilities.filter((item) => item.kind === "daycare").length > 0 && (
+                            <optgroup label="어린이집">
+                              {originFacilities
+                                .filter((item) => item.kind === "daycare")
+                                .slice(0, 12)
+                                .map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name} · {item.distanceM}m
+                                  </option>
+                                ))}
+                            </optgroup>
+                          )}
+                          {originFacilities.filter((item) => item.kind === "kindergarten").length > 0 && (
+                            <optgroup label="유치원">
+                              {originFacilities
+                                .filter((item) => item.kind === "kindergarten")
+                                .slice(0, 12)
+                                .map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name} · {item.distanceM}m
+                                  </option>
+                                ))}
+                            </optgroup>
+                          )}
+                        </select>
+                        <p className="mt-1.5 text-[12px] leading-5 text-[#65757e]">
+                          {originLoading
+                            ? "주변 어린이집·유치원을 확인하는 중…"
+                            : "유치원알리미·어린이집 통합정보의 현재 위치 데이터를 사용합니다."}
+                        </p>
+                      </div>
                       {routeLoading && (
-                        <p className="mt-1 text-[13px] leading-5 text-[#7f8d96]">
+                        <p className="mt-3 text-[13px] leading-5 text-[#7f8d96]">
                           보행 경로와 주변 안전 정보를 계산하는 중…
                         </p>
                       )}
                       {!routeLoading && walkingRoute && (
-                        <p className="mt-1 text-[14px] leading-6 text-[#aab5bb]">
-                          도보 <strong className="font-bold text-white">{walkingRoute.durationMinutes}분</strong>
-                          <span className="mx-2 text-white/20">·</span>
-                          {walkingRoute.distanceM >= 1000
-                            ? (walkingRoute.distanceM / 1000).toFixed(1) + "km"
-                            : walkingRoute.distanceM + "m"}
-                        </p>
+                        <>
+                          <p className="mt-3 text-[14px] leading-6 text-[#aab5bb]">
+                            도보 <strong className="font-bold text-white">{walkingRoute.durationMinutes}분</strong>
+                            <span className="mx-2 text-white/20">·</span>
+                            {walkingRoute.distanceM >= 1000
+                              ? (walkingRoute.distanceM / 1000).toFixed(1) + "km"
+                              : walkingRoute.distanceM + "m"}
+                          </p>
+                          <p className="mt-1 text-[12px] leading-5 text-[#71818a]">
+                            {routeOriginLabel} → {selected.place.name}
+                          </p>
+                        </>
                       )}
                     </div>
                     {walkingRoute && !routeLoading && (
@@ -799,7 +921,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       )}
 
                       <p className="mt-3 text-[12px] leading-5 text-[#5f6f78]">
-                        보행선과 공공데이터의 근접도를 비교한 참고 정보이며 실제 보행 안전을 보장하는 판정은 아닙니다.
+                        OSM에 별도 보도·보행로 선형이 없는 구간은 도로 중심선으로 표시될 수 있습니다. 보행선과 공공데이터의 근접도를 비교한 참고 정보이며 실제 보행 안전을 보장하는 판정은 아닙니다.
                       </p>
                     </>
                   )}

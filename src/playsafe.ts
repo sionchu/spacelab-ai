@@ -11,7 +11,7 @@ export type PlaySafeTree = {
 };
 
 export type PlaySafeMapViewAction = {
-  type: "top" | "search" | "route";
+  type: "top" | "search" | "focus" | "route";
   nonce: number;
   point?: GeoPoint;
 };

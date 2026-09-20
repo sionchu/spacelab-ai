@@ -156,18 +156,32 @@ export async function searchVWorldAddress(query: string): Promise<AddressSearchR
 export async function searchNominatimPlace(
   query: string,
   limit = 6,
+  bias?: GeoPoint,
 ): Promise<AddressSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const url = buildUrl("https://nominatim.openstreetmap.org/search", {
+  const params: Record<string, string | number> = {
     q: trimmed,
     format: "jsonv2",
     limit: Math.max(1, Math.min(8, limit)),
     countrycodes: "kr",
     addressdetails: 1,
     "accept-language": "ko",
-  });
+  };
+  if (bias) {
+    const latSpan = 0.45;
+    const lonSpan = 0.55;
+    params.viewbox = [
+      bias.lon - lonSpan,
+      bias.lat + latSpan,
+      bias.lon + lonSpan,
+      bias.lat - latSpan,
+    ].join(",");
+    params.bounded = 0;
+  }
+
+  const url = buildUrl("https://nominatim.openstreetmap.org/search", params);
 
   return withNominatimRateLimit(async () => {
     const response = await fetch(url, {

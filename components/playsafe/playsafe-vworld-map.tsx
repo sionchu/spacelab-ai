@@ -135,7 +135,6 @@ export function PlaySafeVWorldMap({
   const clickHandlerRef = useRef<any>(undefined);
   const shadowFrameRef = useRef<number | undefined>(undefined);
   const readyRef = useRef(false);
-  const lastCameraPlaceRef = useRef<string | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -151,7 +150,7 @@ export function PlaySafeVWorldMap({
         const vw = runtime.vw;
         if (!vw) throw new Error("VWorld runtime is unavailable");
 
-        const initial = snapshot.assessments[0]?.place.point ?? snapshot.query.center;
+        const initial = snapshot.query.center;
         const position = new vw.CameraPosition(
           new vw.CoordZ(initial.lon, initial.lat, 850),
           new vw.Direction(335, -48, 0),
@@ -416,34 +415,13 @@ export function PlaySafeVWorldMap({
         },
       });
 
-      if (
-        viewAction?.type !== "search"
-        && viewAction?.type !== "route"
-        && lastCameraPlaceRef.current !== selected.place.id
-      ) {
-        lastCameraPlaceRef.current = selected.place.id;
-        viewer.camera.flyTo({
-          destination: Cesium.Cartesian3.fromDegrees(
-            selected.place.point.lon,
-            selected.place.point.lat,
-            720,
-          ),
-          orientation: {
-            heading: Cesium.Math.toRadians(335),
-            pitch: Cesium.Math.toRadians(-48),
-            roll: 0,
-          },
-          duration: 0.8,
-        });
-      }
-
       viewer.scene.requestRender?.();
     };
 
     applyStatic();
     window.addEventListener("playsafe-vworld-ready", applyStatic);
     return () => window.removeEventListener("playsafe-vworld-ready", applyStatic);
-  }, [selectedPlaceId, snapshot, viewAction?.type]);
+  }, [selectedPlaceId, snapshot]);
 
   useEffect(() => {
     const applyTime = () => {
@@ -665,7 +643,7 @@ export function PlaySafeVWorldMap({
         destination: Cesium.Cartesian3.fromDegrees(
           target.lon,
           target.lat,
-          viewAction.type === "top" ? 900 : 850,
+          viewAction.type === "top" ? 900 : viewAction.type === "focus" ? 720 : 850,
         ),
         orientation: {
           heading: Cesium.Math.toRadians(viewAction.type === "top" ? 0 : 335),

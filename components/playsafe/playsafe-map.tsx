@@ -68,7 +68,6 @@ export function PlaySafeMap({
   const mapRef = useRef<MapLibreMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const avatarRef = useRef<maplibregl.Marker | null>(null);
-  const lastCameraPlaceRef = useRef<string | undefined>(undefined);
   const onSelectRef = useRef(onSelectPlace);
   onSelectRef.current = onSelectPlace;
 
@@ -434,21 +433,6 @@ export function PlaySafeMap({
     const map = mapRef.current;
     if (!map || !mapReady || !selected) return;
 
-    if (
-      viewAction?.type !== "search"
-      && viewAction?.type !== "route"
-      && lastCameraPlaceRef.current !== selected.place.id
-    ) {
-      lastCameraPlaceRef.current = selected.place.id;
-      map.easeTo({
-        center: [selected.place.point.lon, selected.place.point.lat],
-        zoom: 16.8,
-        pitch: 62,
-        bearing: -24,
-        duration: 650,
-      });
-    }
-
     const element = document.createElement("div");
     element.setAttribute("aria-label", `${snapshot.query.childAge}세 아이 위치`);
     element.textContent = "🧒";
@@ -468,7 +452,7 @@ export function PlaySafeMap({
     avatarRef.current = new maplibregl.Marker({ element, anchor: "bottom" })
       .setLngLat([selected.place.point.lon, selected.place.point.lat])
       .addTo(map);
-  }, [mapReady, selected, snapshot.query.childAge, viewAction?.type]);
+  }, [mapReady, selected, snapshot.query.childAge]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -494,7 +478,7 @@ export function PlaySafeMap({
 
     map.easeTo({
       center: [target.lon, target.lat],
-      zoom: viewAction.type === "top" ? 17.2 : 15.2,
+      zoom: viewAction.type === "top" ? 17.2 : viewAction.type === "focus" ? 16.8 : 15.2,
       pitch: viewAction.type === "top" ? 0 : 62,
       bearing: viewAction.type === "top" ? 0 : -24,
       duration: 650,

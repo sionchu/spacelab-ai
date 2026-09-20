@@ -19,6 +19,7 @@ const routeCache = new Map<string, {
 
 function routeKey(start: GeoPoint, end: GeoPoint) {
   return [
+    "ped-v2",
     start.lon.toFixed(5),
     start.lat.toFixed(5),
     end.lon.toFixed(5),
@@ -73,6 +74,15 @@ async function valhallaPedestrianRoute(
         { lat: end.lat, lon: end.lon, type: "break" },
       ],
       costing: "pedestrian",
+      costing_options: {
+        pedestrian: {
+          walkway_factor: 0.55,
+          sidewalk_factor: 0.55,
+          alley_factor: 3.5,
+          driveway_factor: 7,
+          step_penalty: 75,
+        },
+      },
       directions_type: "none",
       units: "kilometers",
     }),
@@ -135,7 +145,7 @@ export async function playSafeWalkingRoute(
     childAccidentHotspots: publicContext.childAccidentHotspots,
     toilets: publicContext.toilets,
     heatMitigation,
-    note: "보행 경로는 OpenStreetMap 기반 Valhalla 라우팅이며, 보호구역·사고다발·편의시설은 경로 주변 공공데이터를 겹쳐 본 참고 정보입니다. 실제 보행 안전을 보장하는 판정은 아닙니다.",
+    note: "보행 경로는 OpenStreetMap 기반 Valhalla 라우팅이며 보행로·보도 geometry가 별도로 매핑된 구간을 우선합니다. 별도 보도 선형이 없는 도로는 OSM 도로 중심선으로 표시될 수 있습니다. 보호구역·사고다발·편의시설은 경로 주변 공공데이터를 겹쳐 본 참고 정보이며 실제 보행 안전을 보장하는 판정은 아닙니다.",
   };
 
   routeCache.set(key, {
