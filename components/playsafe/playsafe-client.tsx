@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Clock3,
   Copy,
+  Footprints,
   LocateFixed,
   Map as MapIcon,
   MapPin,
@@ -17,7 +18,11 @@ import { PlaySafeVWorldMap } from "@/components/playsafe/playsafe-vworld-map";
 import { Slider } from "@/components/ui/slider";
 import { timeFromMinutes } from "@/lib/solar/sun";
 import type { GeoPoint } from "@/src/types";
-import type { PlaySafeMapViewAction, PlaySafeSnapshot } from "@/src/playsafe";
+import type {
+  PlaySafeMapViewAction,
+  PlaySafeSnapshot,
+  PlaySafeWalkingRoute,
+} from "@/src/playsafe";
 import { registerPlaySafeTools } from "@/src/playsafe-webmcp";
 
 type SearchResult = {
@@ -68,6 +73,9 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [message, setMessage] = useState<string>();
   const [copiedPlaceId, setCopiedPlaceId] = useState<string>();
   const [viewAction, setViewAction] = useState<PlaySafeMapViewAction>();
+  const [walkingRoute, setWalkingRoute] = useState<PlaySafeWalkingRoute>();
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeMessage, setRouteMessage] = useState<string>();
   const [vworldIssue, setVworldIssue] = useState<string>();
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
@@ -244,6 +252,53 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     selected && snapshot?.recommendation?.placeId === selected.place.id,
   );
 
+  useEffect(() => {
+    if (!selected) {
+      setWalkingRoute(undefined);
+      setRouteMessage(undefined);
+      return;
+    }
+
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      fromLon: String(center.lon),
+      fromLat: String(center.lat),
+      toLon: String(selected.place.point.lon),
+      toLat: String(selected.place.point.lat),
+    });
+
+    setWalkingRoute(undefined);
+    setRouteLoading(true);
+    setRouteMessage(undefined);
+
+    void fetch("/api/playsafe/route?" + params, { signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.detail || payload?.error || "보행 경로 분석 실패");
+        return payload as PlaySafeWalkingRoute;
+      })
+      .then((next) => {
+        if (!controller.signal.aborted) setWalkingRoute(next);
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setWalkingRoute(undefined);
+          setRouteMessage(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setRouteLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [
+    center.lat,
+    center.lon,
+    selected?.place.id,
+    selected?.place.point.lat,
+    selected?.place.point.lon,
+  ]);
+
   return (
     <main className="relative h-dvh overflow-hidden bg-[#0b1116] text-white">
       <section className="absolute inset-0 overflow-hidden">
@@ -253,6 +308,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             selectedPlaceId={selectedPlaceId}
             previewAt={previewAt}
             viewAction={viewAction}
+            walkingRoute={walkingRoute}
             onSelectPlace={selectPlace}
             onUnavailable={handleVWorldUnavailable}
           />
@@ -264,6 +320,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             selectedPlaceId={selectedPlaceId}
             previewAt={previewAt}
             viewAction={viewAction}
+            walkingRoute={walkingRoute}
             onSelectPlace={selectPlace}
           />
         )}
@@ -325,6 +382,19 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               <LocateFixed className="size-[18px]" />
               <span className="pointer-events-none absolute right-[calc(100%+8px)] whitespace-nowrap rounded-lg bg-[#071015]/92 px-2.5 py-1.5 text-[12px] font-medium leading-none text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
                 검색 위치
+              </span>
+            </button>
+            <div className="mx-2 h-px bg-white/[0.08]" />
+            <button
+              type="button"
+              aria-label="보행 경로 보기"
+              disabled={!walkingRoute || routeLoading}
+              onClick={() => triggerMapView("route")}
+              className="group relative grid size-11 place-items-center rounded-xl text-[#9bd4a3] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9bd4a3]/60 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              <Footprints className="size-[18px]" />
+              <span className="pointer-events-none absolute right-[calc(100%+8px)] whitespace-nowrap rounded-lg bg-[#071015]/92 px-2.5 py-1.5 text-[12px] font-medium leading-none text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-visible:opacity-100">
+                가는 길
               </span>
             </button>
           </div>
@@ -602,6 +672,148 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       ? snapshot.recommendation?.summary
                       : selected.reasons.slice(0, 3).join(" · ")}
                   </p>
+                </section>
+
+                <section className="mt-5 border-t border-white/[0.06] pt-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 text-[14px] font-bold leading-6 text-[#dfe7eb]">
+                        <Footprints className="size-4 text-[#9bd4a3]" />
+                        가는 길
+                      </div>
+                      {routeLoading && (
+                        <p className="mt-1 text-[13px] leading-5 text-[#7f8d96]">
+                          보행 경로와 주변 안전 정보를 계산하는 중…
+                        </p>
+                      )}
+                      {!routeLoading && walkingRoute && (
+                        <p className="mt-1 text-[14px] leading-6 text-[#aab5bb]">
+                          도보 <strong className="font-bold text-white">{walkingRoute.durationMinutes}분</strong>
+                          <span className="mx-2 text-white/20">·</span>
+                          {walkingRoute.distanceM >= 1000
+                            ? (walkingRoute.distanceM / 1000).toFixed(1) + "km"
+                            : walkingRoute.distanceM + "m"}
+                        </p>
+                      )}
+                    </div>
+                    {walkingRoute && !routeLoading && (
+                      <button
+                        type="button"
+                        onClick={() => triggerMapView("route")}
+                        className="shrink-0 text-[12px] font-bold leading-5 text-[#72e2d3] hover:text-[#9af0e6]"
+                      >
+                        지도에서 보기
+                      </button>
+                    )}
+                  </div>
+
+                  {routeMessage && (
+                    <p className="mt-3 text-[13px] leading-6 text-[#d6bd73]">{routeMessage}</p>
+                  )}
+
+                  {walkingRoute && (
+                    <>
+                      <div className="mt-4 grid grid-cols-3 gap-4">
+                        <div>
+                          <div className="text-[12px] leading-5 text-[#71818a]">어린이보호구역</div>
+                          <div className="mt-1 text-[17px] font-bold tabular-nums">
+                            {walkingRoute.summary.childZones}곳
+                          </div>
+                          <div className="text-[12px] leading-5 text-[#7f8d96]">
+                            CCTV {walkingRoute.summary.childZoneCctvCount}대
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[12px] leading-5 text-[#71818a]">사고다발 참고</div>
+                          <div className="mt-1 text-[17px] font-bold tabular-nums">
+                            {walkingRoute.summary.childAccidentHotspots}곳
+                          </div>
+                          <div className="text-[12px] leading-5 text-[#7f8d96]">
+                            경로 150m 이내
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[12px] leading-5 text-[#71818a]">어린이 편의 화장실</div>
+                          <div className="mt-1 text-[17px] font-bold tabular-nums">
+                            {walkingRoute.summary.childFriendlyToilets}곳
+                          </div>
+                          <div className="text-[12px] leading-5 text-[#7f8d96]">
+                            경로 120m 이내
+                          </div>
+                        </div>
+                      </div>
+
+                      {(walkingRoute.childZones.length > 0
+                        || walkingRoute.childAccidentHotspots.length > 0
+                        || walkingRoute.toilets.length > 0) && (
+                        <details className="group mt-4">
+                          <summary className="flex cursor-pointer list-none items-center justify-between py-1 text-[13px] font-semibold leading-5 text-[#93a2aa] [&::-webkit-details-marker]:hidden">
+                            경로 주변 상세 보기
+                            <ChevronDown className="size-4 transition group-open:rotate-180" />
+                          </summary>
+                          <div className="mt-2 space-y-3">
+                            {walkingRoute.childZones.slice(0, 4).map((zone) => (
+                              <div key={zone.id} className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block truncate text-[12px] leading-5 text-[#d9bd63]">
+                                    {zone.name || zone.facilityType || "어린이보호구역"}
+                                  </strong>
+                                  <span className="block truncate text-[12px] leading-5 text-[#71818a]">
+                                    {zone.facilityType || "보호구역"} · CCTV {zone.cctvCount}대
+                                  </span>
+                                </div>
+                                <span className="shrink-0 text-[12px] leading-5 text-[#7f8d96]">
+                                  경로 {zone.distanceToRouteM}m
+                                </span>
+                              </div>
+                            ))}
+
+                            {walkingRoute.childAccidentHotspots.slice(0, 3).map((spot) => (
+                              <div key={spot.id} className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block truncate text-[12px] leading-5 text-[#ef9d8b]">
+                                    {spot.name}
+                                  </strong>
+                                  <span className="block truncate text-[12px] leading-5 text-[#71818a]">
+                                    {spot.year} {spot.accidentType} · 사고 {spot.occurrences}건
+                                  </span>
+                                </div>
+                                <span className="shrink-0 text-[12px] leading-5 text-[#7f8d96]">
+                                  경로 {spot.distanceToRouteM}m
+                                </span>
+                              </div>
+                            ))}
+
+                            {walkingRoute.toilets.slice(0, 2).map((toilet) => (
+                              <div key={toilet.id} className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <strong className="block truncate text-[12px] leading-5 text-[#9fb3ff]">
+                                    {toilet.name}
+                                  </strong>
+                                  <span className="block truncate text-[12px] leading-5 text-[#71818a]">
+                                    {toilet.diaperChange ? "기저귀교환대 정보 있음" : "어린이용 위생시설"}
+                                  </span>
+                                </div>
+                                <span className="shrink-0 text-[12px] leading-5 text-[#7f8d96]">
+                                  경로 {toilet.distanceToRouteM}m
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      )}
+
+                      {walkingRoute.heatMitigation.status === "unavailable-no-key" && (
+                        <p className="mt-4 text-[12px] leading-5 text-[#697982]">
+                          폭염저감시설(그늘막·쉼터)은 공식 데이터 서비스키 미연결로 아직 경로 분석에 포함하지 않았습니다.
+                        </p>
+                      )}
+
+                      <p className="mt-3 text-[12px] leading-5 text-[#5f6f78]">
+                        보행선과 공공데이터의 근접도를 비교한 참고 정보이며 실제 보행 안전을 보장하는 판정은 아닙니다.
+                      </p>
+                    </>
+                  )}
                 </section>
 
                 <section className="mt-6 bg-white/[0.035] px-4 py-4">

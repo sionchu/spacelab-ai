@@ -11,7 +11,7 @@ export type PlaySafeTree = {
 };
 
 export type PlaySafeMapViewAction = {
-  type: "top" | "search";
+  type: "top" | "search" | "route";
   nonce: number;
 };
 
@@ -162,6 +162,60 @@ export type PlaySafePublicContext = {
     childCenters: number;
     toilets: number;
   };
+};
+
+export type PlaySafeWalkingRoute = {
+  provider: "valhalla-osm";
+  start: GeoPoint;
+  end: GeoPoint;
+  distanceM: number;
+  durationMinutes: number;
+  points: GeoPoint[];
+  summary: {
+    childZones: number;
+    childZoneCctvCount: number;
+    childAccidentHotspots: number;
+    childFriendlyToilets: number;
+    heatMitigationFacilities: number;
+  };
+  childZones: Array<{
+    id: string;
+    name: string;
+    facilityType: string;
+    point: GeoPoint;
+    distanceToRouteM: number;
+    cctvCount: number;
+  }>;
+  childAccidentHotspots: Array<{
+    id: string;
+    name: string;
+    accidentType: string;
+    year: string;
+    point: GeoPoint;
+    distanceToRouteM: number;
+    occurrences: number;
+    casualties: number;
+  }>;
+  toilets: Array<{
+    id: string;
+    name: string;
+    address: string;
+    point: GeoPoint;
+    distanceToRouteM: number;
+    diaperChange: string;
+    childFixtures: number;
+  }>;
+  heatMitigation: {
+    status: "available" | "unavailable-no-key" | "error";
+    facilities: Array<{
+      id: string;
+      name: string;
+      type: string;
+      point: GeoPoint;
+      distanceToRouteM: number;
+    }>;
+  };
+  note: string;
 };
 
 export type PlaySafeSnapshot = {

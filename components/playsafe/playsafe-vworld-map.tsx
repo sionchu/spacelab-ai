@@ -5,6 +5,7 @@ import {
   playSafeShadowPolygons,
   type PlaySafeMapViewAction,
   type PlaySafeSnapshot,
+  type PlaySafeWalkingRoute,
 } from "@/src/playsafe";
 
 type VWorldMapLike = {
@@ -116,6 +117,7 @@ export function PlaySafeVWorldMap({
   selectedPlaceId,
   previewAt,
   viewAction,
+  walkingRoute,
   onSelectPlace,
   onUnavailable,
 }: {
@@ -123,6 +125,7 @@ export function PlaySafeVWorldMap({
   selectedPlaceId?: string;
   previewAt: string;
   viewAction?: PlaySafeMapViewAction;
+  walkingRoute?: PlaySafeWalkingRoute;
   onSelectPlace: (placeId: string) => void;
   onUnavailable: (reason: string) => void;
 }) {
@@ -506,6 +509,122 @@ export function PlaySafeVWorldMap({
   }, [previewAt, selectedPlaceId, snapshot.assessments, snapshot.buildings, snapshot.trees]);
 
   useEffect(() => {
+    const applyRoute = () => {
+      if (!readyRef.current) return;
+      const runtime = window as VWorldWindow;
+      const viewer = viewerRef.current;
+      const Cesium = runtime.Cesium;
+      if (!viewer || !Cesium) return;
+
+      clearPlaySafeEntities(viewer, [
+        "playsafe:route-line",
+        "playsafe:route-start",
+        "playsafe:route-zone:",
+        "playsafe:route-accident:",
+        "playsafe:route-toilet:",
+      ]);
+
+      if (!walkingRoute || walkingRoute.points.length < 2) {
+        viewer.scene.requestRender?.();
+        return;
+      }
+
+      const routePositions = Cesium.Cartesian3.fromDegreesArray(
+        walkingRoute.points.flatMap((point) => [point.lon, point.lat]),
+      );
+
+      viewer.entities.add({
+        id: "playsafe:route-line",
+        polyline: {
+          positions: routePositions,
+          width: 6,
+          material: Cesium.Color.fromCssColorString("#53d6c7").withAlpha(0.96),
+          clampToGround: true,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+
+      viewer.entities.add({
+        id: "playsafe:route-start",
+        position: Cesium.Cartesian3.fromDegrees(
+          walkingRoute.start.lon,
+          walkingRoute.start.lat,
+        ),
+        point: {
+          pixelSize: 13,
+          color: Cesium.Color.fromCssColorString("#53d6c7"),
+          outlineColor: Cesium.Color.WHITE,
+          outlineWidth: 3,
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: "출발",
+          font: "700 12px sans-serif",
+          fillColor: Cesium.Color.WHITE,
+          outlineColor: Cesium.Color.fromCssColorString("#071015"),
+          outlineWidth: 3,
+          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+          pixelOffset: new Cesium.Cartesian2(0, -24),
+          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+
+      walkingRoute.childZones.slice(0, 10).forEach((zone, index) => {
+        viewer.entities.add({
+          id: "playsafe:route-zone:" + index,
+          position: Cesium.Cartesian3.fromDegrees(zone.point.lon, zone.point.lat),
+          point: {
+            pixelSize: 9,
+            color: Cesium.Color.fromCssColorString("#d9bd63"),
+            outlineColor: Cesium.Color.fromCssColorString("#071015"),
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      });
+
+      walkingRoute.childAccidentHotspots.slice(0, 8).forEach((spot, index) => {
+        viewer.entities.add({
+          id: "playsafe:route-accident:" + index,
+          position: Cesium.Cartesian3.fromDegrees(spot.point.lon, spot.point.lat),
+          point: {
+            pixelSize: 10,
+            color: Cesium.Color.fromCssColorString("#ef9d8b"),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 2,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      });
+
+      walkingRoute.toilets.slice(0, 5).forEach((toilet, index) => {
+        viewer.entities.add({
+          id: "playsafe:route-toilet:" + index,
+          position: Cesium.Cartesian3.fromDegrees(toilet.point.lon, toilet.point.lat),
+          point: {
+            pixelSize: 7,
+            color: Cesium.Color.fromCssColorString("#7f9df4"),
+            outlineColor: Cesium.Color.WHITE,
+            outlineWidth: 1,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      });
+
+      viewer.scene.requestRender?.();
+    };
+
+    applyRoute();
+    window.addEventListener("playsafe-vworld-ready", applyRoute);
+    return () => window.removeEventListener("playsafe-vworld-ready", applyRoute);
+  }, [walkingRoute]);
+
+  useEffect(() => {
     if (!viewAction) return;
 
     const applyCamera = () => {
@@ -517,6 +636,23 @@ export function PlaySafeVWorldMap({
 
       const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
         ?? snapshot.assessments[0];
+
+      if (viewAction.type === "route" && walkingRoute?.points.length) {
+        const routePositions = walkingRoute.points.map((point) =>
+          Cesium.Cartesian3.fromDegrees(point.lon, point.lat));
+        const sphere = Cesium.BoundingSphere.fromPoints(routePositions);
+        viewer.camera.flyToBoundingSphere(sphere, {
+          duration: 0.65,
+          offset: new Cesium.HeadingPitchRange(
+            Cesium.Math.toRadians(0),
+            Cesium.Math.toRadians(-58),
+            Math.max(420, sphere.radius * 3.2),
+          ),
+        });
+        viewer.scene.requestRender?.();
+        return;
+      }
+
       const target = viewAction.type === "top"
         ? selected?.place.point ?? snapshot.query.center
         : snapshot.query.center;
@@ -540,7 +676,7 @@ export function PlaySafeVWorldMap({
     applyCamera();
     window.addEventListener("playsafe-vworld-ready", applyCamera);
     return () => window.removeEventListener("playsafe-vworld-ready", applyCamera);
-  }, [selectedPlaceId, snapshot.assessments, snapshot.query.center, viewAction]);
+  }, [selectedPlaceId, snapshot.assessments, snapshot.query.center, viewAction, walkingRoute]);
 
   return (
     <div className="absolute inset-0">

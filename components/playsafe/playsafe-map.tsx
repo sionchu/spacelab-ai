@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap, StyleSpecification } from "maplibre-gl";
-import { featureCollection, point, polygon } from "@turf/turf";
+import { featureCollection, lineString, point, polygon } from "@turf/turf";
 import type { Feature, Point } from "geojson";
 import {
   playSafeShadowPolygons,
   type PlaySafeMapViewAction,
   type PlaySafeSnapshot,
+  type PlaySafeWalkingRoute,
 } from "@/src/playsafe";
 
 const baseStyle: StyleSpecification = {
@@ -53,12 +54,14 @@ export function PlaySafeMap({
   selectedPlaceId,
   previewAt,
   viewAction,
+  walkingRoute,
   onSelectPlace,
 }: {
   snapshot: PlaySafeSnapshot;
   selectedPlaceId?: string;
   previewAt: string;
   viewAction?: PlaySafeMapViewAction;
+  walkingRoute?: PlaySafeWalkingRoute;
   onSelectPlace: (placeId: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -129,6 +132,27 @@ export function PlaySafeMap({
       },
     )),
   ), [selected]);
+
+  const routeGeoJson = useMemo(() => featureCollection(
+    walkingRoute?.points.length
+      ? [lineString(walkingRoute.points.map((item) => [item.lon, item.lat]))]
+      : [],
+  ), [walkingRoute]);
+
+  const routeSignalsGeoJson = useMemo(() => featureCollection([
+    ...(walkingRoute?.childZones ?? []).map((item) => point(
+      [item.point.lon, item.point.lat],
+      { kind: "zone", name: item.name },
+    )),
+    ...(walkingRoute?.childAccidentHotspots ?? []).map((item) => point(
+      [item.point.lon, item.point.lat],
+      { kind: "accident", name: item.name },
+    )),
+    ...(walkingRoute?.toilets ?? []).map((item) => point(
+      [item.point.lon, item.point.lat],
+      { kind: "toilet", name: item.name },
+    )),
+  ]), [walkingRoute]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -206,6 +230,46 @@ export function PlaySafeMap({
           "circle-opacity": 0.82,
           "circle-stroke-width": 1,
           "circle-stroke-color": "#d6f5dc",
+        },
+      });
+
+      map.addSource("playsafe-route", { type: "geojson", data: routeGeoJson });
+      map.addLayer({
+        id: "playsafe-route",
+        type: "line",
+        source: "playsafe-route",
+        paint: {
+          "line-color": "#53d6c7",
+          "line-width": 5,
+          "line-opacity": 0.92,
+          "line-blur": 0.25,
+        },
+      });
+
+      map.addSource("playsafe-route-signals", { type: "geojson", data: routeSignalsGeoJson });
+      map.addLayer({
+        id: "playsafe-route-signals",
+        type: "circle",
+        source: "playsafe-route-signals",
+        paint: {
+          "circle-radius": [
+            "match",
+            ["get", "kind"],
+            "accident", 6,
+            "zone", 5,
+            4,
+          ],
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "accident", "#ef9d8b",
+            "zone", "#d9bd63",
+            "toilet", "#7f9df4",
+            "#ffffff",
+          ],
+          "circle-stroke-color": "#f5f8fa",
+          "circle-stroke-width": 1.5,
+          "circle-opacity": 0.92,
         },
       });
 
@@ -361,6 +425,13 @@ export function PlaySafeMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map || !mapReady || !map.isStyleLoaded()) return;
+    setGeoJson(map, "playsafe-route", routeGeoJson);
+    setGeoJson(map, "playsafe-route-signals", routeSignalsGeoJson);
+  }, [mapReady, routeGeoJson, routeSignalsGeoJson]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !mapReady || !selected) return;
 
     if (lastCameraPlaceRef.current !== selected.place.id) {
@@ -399,6 +470,20 @@ export function PlaySafeMap({
     const map = mapRef.current;
     if (!map || !mapReady || !viewAction) return;
 
+    if (viewAction.type === "route" && walkingRoute?.points.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      walkingRoute.points.forEach((item) => bounds.extend([item.lon, item.lat]));
+      const wide = map.getContainer().clientWidth >= 760;
+      map.fitBounds(bounds, {
+        padding: wide
+          ? { top: 90, right: 90, bottom: 90, left: 450 }
+          : { top: 90, right: 40, bottom: 220, left: 40 },
+        maxZoom: 17.2,
+        duration: 650,
+      });
+      return;
+    }
+
     const target = viewAction.type === "top"
       ? selected?.place.point ?? snapshot.query.center
       : snapshot.query.center;
@@ -410,7 +495,7 @@ export function PlaySafeMap({
       bearing: viewAction.type === "top" ? 0 : -24,
       duration: 650,
     });
-  }, [mapReady, selected, snapshot.query.center, viewAction]);
+  }, [mapReady, selected, snapshot.query.center, viewAction, walkingRoute]);
 
   return (
     <div className="absolute inset-0">

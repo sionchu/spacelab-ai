@@ -1,8 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { gunzipSync } from "node:zlib";
 import path from "node:path";
+import { lineString, point, pointToLineDistance } from "@turf/turf";
 import type { GeoPoint } from "@/src/types";
-import type { PlaySafePublicContext } from "@/src/playsafe";
+import type { PlaySafePublicContext, PlaySafeWalkingRoute } from "@/src/playsafe";
 
 type RawPoint = {
   id: string;
@@ -66,6 +67,138 @@ function nearby<T extends RawPoint>(
     .filter((row) => row.distanceM <= radiusM)
     .sort((a, b) => a.distanceM - b.distanceM)
     .slice(0, limit);
+}
+
+function routeCandidates<T extends RawPoint>(
+  rows: T[],
+  route: GeoPoint[],
+  corridorM: number,
+) {
+  if (route.length < 2) return [];
+  const latPad = corridorM / 111_320;
+  const avgLat = route.reduce((sum, value) => sum + value.lat, 0) / route.length;
+  const lonPad = corridorM / (111_320 * Math.max(0.2, Math.cos(avgLat * Math.PI / 180)));
+  const minLat = Math.min(...route.map((value) => value.lat)) - latPad;
+  const maxLat = Math.max(...route.map((value) => value.lat)) + latPad;
+  const minLon = Math.min(...route.map((value) => value.lon)) - lonPad;
+  const maxLon = Math.max(...route.map((value) => value.lon)) + lonPad;
+  const line = lineString(route.map((value) => [value.lon, value.lat]));
+
+  return rows
+    .filter((row) =>
+      row.lat >= minLat
+      && row.lat <= maxLat
+      && row.lon >= minLon
+      && row.lon <= maxLon)
+    .map((row) => ({
+      ...row,
+      point: { lon: row.lon, lat: row.lat },
+      distanceToRouteM: Math.round(pointToLineDistance(
+        point([row.lon, row.lat]),
+        line,
+        { units: "meters" },
+      )),
+    }))
+    .filter((row) => row.distanceToRouteM <= corridorM)
+    .sort((a, b) => a.distanceToRouteM - b.distanceToRouteM);
+}
+
+export async function playSafeRoutePublicContext(
+  route: GeoPoint[],
+): Promise<Pick<
+  PlaySafeWalkingRoute,
+  "childZones" | "childAccidentHotspots" | "toilets" | "summary"
+>> {
+  const data = await loadPublicContext();
+
+  const childZones = routeCandidates(data.datasets.childZones.rows, route, 120)
+    .slice(0, 12)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      facilityType: String(row.facilityType || ""),
+      point: row.point,
+      distanceToRouteM: row.distanceToRouteM,
+      cctvCount: Number(row.cctvCount || 0),
+    }));
+
+  const rawHotspots = routeCandidates(data.datasets.childAccidentHotspots.rows, route, 150);
+  const hotspotGroups = new Map<string, {
+    id: string;
+    name: string;
+    point: GeoPoint;
+    distanceToRouteM: number;
+    accidentTypes: Set<string>;
+    years: Set<string>;
+    occurrences: number;
+    casualties: number;
+  }>();
+  for (const row of rawHotspots) {
+    const key = row.lat.toFixed(3) + "," + row.lon.toFixed(3);
+    const current = hotspotGroups.get(key);
+    if (!current) {
+      hotspotGroups.set(key, {
+        id: row.id,
+        name: row.name,
+        point: row.point,
+        distanceToRouteM: row.distanceToRouteM,
+        accidentTypes: new Set([String(row.accidentType || "")].filter(Boolean)),
+        years: new Set([String(row.year || "")].filter(Boolean)),
+        occurrences: Number(row.occurrences || 0),
+        casualties: Number(row.casualties || 0),
+      });
+      continue;
+    }
+    current.distanceToRouteM = Math.min(current.distanceToRouteM, row.distanceToRouteM);
+    const accidentType = String(row.accidentType || "");
+    const year = String(row.year || "");
+    if (accidentType) current.accidentTypes.add(accidentType);
+    if (year) current.years.add(year);
+    current.occurrences += Number(row.occurrences || 0);
+    current.casualties += Number(row.casualties || 0);
+  }
+
+  const childAccidentHotspots = [...hotspotGroups.values()]
+    .sort((a, b) => a.distanceToRouteM - b.distanceToRouteM)
+    .slice(0, 8)
+    .map((row) => {
+      const years = [...row.years].sort();
+      return {
+        id: row.id,
+        name: row.name,
+        accidentType: [...row.accidentTypes].join("·"),
+        year: years.length > 1 ? years[0] + "–" + years[years.length - 1] : (years[0] || ""),
+        point: row.point,
+        distanceToRouteM: row.distanceToRouteM,
+        occurrences: row.occurrences,
+        casualties: row.casualties,
+      };
+    });
+
+  const toilets = routeCandidates(data.datasets.toilets.rows, route, 120)
+    .slice(0, 6)
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      address: String(row.address || ""),
+      point: row.point,
+      distanceToRouteM: row.distanceToRouteM,
+      diaperChange: String(row.diaperChange || ""),
+      childFixtures: Number(row.childFixtures || 0),
+    }));
+
+  return {
+    childZones,
+    childAccidentHotspots,
+    toilets,
+    summary: {
+      childZones: childZones.length,
+      childZoneCctvCount: childZones.reduce((sum, item) => sum + item.cctvCount, 0),
+      childAccidentHotspots: childAccidentHotspots.length,
+      childFriendlyToilets: toilets.length,
+      heatMitigationFacilities: 0,
+    },
+  };
 }
 
 export async function playSafePublicContext(
