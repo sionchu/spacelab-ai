@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useMotionValue, useMotionValueEvent, useReducedMotion, useSpring } from "motion/react";
+import { AnimatePresence, motion, useDragControls, useMotionValue, useMotionValueEvent, useReducedMotion, useSpring } from "motion/react";
 import {
   ChevronDown,
   Clock3,
@@ -49,6 +49,9 @@ type RouteOriginFacility = {
   suspended: boolean;
   closed: boolean;
 };
+
+type MobileSheetState = "collapsed" | "half" | "expanded";
+const MOBILE_SHEET_ORDER: MobileSheetState[] = ["expanded", "half", "collapsed"];
 
 function kstNowParts() {
   const shifted = new Date(Date.now() + 9 * 60 * 60_000);
@@ -130,6 +133,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const [originFacilities, setOriginFacilities] = useState<RouteOriginFacility[]>([]);
   const [originLoading, setOriginLoading] = useState(false);
   const [vworldIssue, setVworldIssue] = useState<string>();
+  const [isMobileSheet, setIsMobileSheet] = useState(false);
+  const [mobileViewportHeight, setMobileViewportHeight] = useState(0);
+  const [mobileSheetState, setMobileSheetState] = useState<MobileSheetState>("half");
+  const sheetDragControls = useDragControls();
+  const sheetDragStartRef = useRef<MobileSheetState>("half");
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
   const searchRequestRef = useRef(0);
@@ -141,6 +149,27 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
   const handleVWorldUnavailable = useCallback((reason: string) => {
     setVworldIssue(reason);
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 640px)");
+    const viewport = window.visualViewport;
+
+    const updateMobileLayout = () => {
+      setIsMobileSheet(media.matches);
+      setMobileViewportHeight(viewport?.height ?? window.innerHeight);
+    };
+
+    updateMobileLayout();
+    media.addEventListener("change", updateMobileLayout);
+    window.addEventListener("resize", updateMobileLayout);
+    viewport?.addEventListener("resize", updateMobileLayout);
+
+    return () => {
+      media.removeEventListener("change", updateMobileLayout);
+      window.removeEventListener("resize", updateMobileLayout);
+      viewport?.removeEventListener("resize", updateMobileLayout);
+    };
   }, []);
 
   useEffect(() => {
@@ -258,6 +287,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   }
 
   function chooseSearchResult(result: SearchResult) {
+    if (isMobileSheet) setMobileSheetState("half");
     setCenter(result.point);
     setCenterLabel(result.address || result.title);
     setQuery(result.title);
@@ -299,7 +329,15 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     }));
   }
 
+  function showRouteOnMap() {
+    triggerMapView("route");
+    if (isMobileSheet) setMobileSheetState("collapsed");
+  }
+
   function selectPlace(placeId: string) {
+    if (isMobileSheet && mobileSheetState === "collapsed") {
+      setMobileSheetState("half");
+    }
     setSelectedPlaceId(placeId);
     const assessment = snapshotRef.current?.assessments.find(
       (item) => item.place.id === placeId,
@@ -347,6 +385,45 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     && bestTimelinePoint.localDateTime.slice(11, 16) !== timeFromMinutes(committedMinutes)
       ? bestTimelinePoint.localDateTime.slice(11, 16)
       : undefined;
+
+  const mobileSheetMaxHeight = isMobileSheet
+    ? Math.max(360, Math.min(mobileViewportHeight * 0.82, mobileViewportHeight - 64))
+    : 0;
+  const mobileCollapsedVisible = Math.min(164, mobileSheetMaxHeight);
+  const mobileHalfVisible = Math.min(
+    mobileSheetMaxHeight,
+    Math.max(320, mobileViewportHeight * 0.5),
+  );
+  const mobileSheetSnapY: Record<MobileSheetState, number> = {
+    expanded: 0,
+    half: Math.max(0, mobileSheetMaxHeight - mobileHalfVisible),
+    collapsed: Math.max(0, mobileSheetMaxHeight - mobileCollapsedVisible),
+  };
+  const mobileSheetY = isMobileSheet ? mobileSheetSnapY[mobileSheetState] : 0;
+
+  function snapMobileSheet(offsetY: number, velocityY: number) {
+    if (!isMobileSheet) return;
+
+    const startState = sheetDragStartRef.current;
+    const startIndex = MOBILE_SHEET_ORDER.indexOf(startState);
+    if (velocityY > 620) {
+      setMobileSheetState(MOBILE_SHEET_ORDER[Math.min(MOBILE_SHEET_ORDER.length - 1, startIndex + 1)]);
+      return;
+    }
+    if (velocityY < -620) {
+      setMobileSheetState(MOBILE_SHEET_ORDER[Math.max(0, startIndex - 1)]);
+      return;
+    }
+
+    const projectedY = mobileSheetSnapY[startState] + offsetY + velocityY * 0.06;
+    const nearest = MOBILE_SHEET_ORDER.reduce((best, state) =>
+      Math.abs(mobileSheetSnapY[state] - projectedY)
+        < Math.abs(mobileSheetSnapY[best] - projectedY)
+        ? state
+        : best,
+    "half" as MobileSheetState);
+    setMobileSheetState(nearest);
+  }
 
   useEffect(() => {
     const snapshotCenter = snapshot?.query.center;
@@ -465,7 +542,9 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           <div
             role="group"
             aria-label="지도 보기 조작"
-            className="pointer-events-auto absolute right-5 top-[88px] z-30 overflow-visible rounded-2xl border border-white/[0.06] bg-[#081116]/78 p-1 shadow-[0_10px_30px_rgba(0,0,0,.26)] backdrop-blur-xl max-[480px]:right-3 max-[480px]:top-[82px]"
+            className={"pointer-events-auto absolute right-5 top-[88px] z-30 overflow-visible rounded-2xl border border-white/[0.06] bg-[#081116]/78 p-1 shadow-[0_10px_30px_rgba(0,0,0,.26)] backdrop-blur-xl max-[480px]:right-3 max-[480px]:top-[82px] " + (
+              mobileSheetState === "expanded" ? "max-[640px]:hidden" : ""
+            )}
           >
             <button
               type="button"
@@ -495,7 +574,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
               type="button"
               aria-label="보행 경로 보기"
               disabled={!walkingRoute || routeLoading}
-              onClick={() => triggerMapView("route")}
+              onClick={showRouteOnMap}
               className="group relative grid size-11 place-items-center rounded-xl text-[#9bd4a3] transition hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9bd4a3]/60 disabled:cursor-not-allowed disabled:opacity-35"
             >
               <Footprints className="size-[18px]" />
@@ -523,11 +602,98 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           )}
         </AnimatePresence>
 
-        <aside className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-98px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[480px]:left-2 max-[480px]:w-[calc(100vw-16px)]">
+        <motion.aside
+          className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-auto max-[640px]:bottom-2 max-[640px]:w-auto max-[640px]:max-w-none max-[640px]:overflow-hidden max-[640px]:rounded-[26px]"
+          style={{
+            height: isMobileSheet ? mobileSheetMaxHeight : undefined,
+            maxHeight: isMobileSheet ? undefined : "calc(100dvh - 98px)",
+          }}
+          animate={{ y: mobileSheetY }}
+          transition={reduceMotion
+            ? { duration: 0 }
+            : { type: "spring", stiffness: 390, damping: 38, mass: 0.8 }}
+          drag={isMobileSheet ? "y" : false}
+          dragControls={sheetDragControls}
+          dragListener={false}
+          dragConstraints={isMobileSheet ? { top: 0, bottom: mobileSheetSnapY.collapsed } : undefined}
+          dragElastic={0.06}
+          dragMomentum={false}
+          onDragStart={() => {
+            sheetDragStartRef.current = mobileSheetState;
+          }}
+          onDragEnd={(_, info) => {
+            snapMobileSheet(info.offset.y, info.velocity.y);
+          }}
+        >
+          {isMobileSheet && (
+            <div className="relative h-8 shrink-0">
+              <div
+                aria-hidden="true"
+                onPointerDown={(event) => sheetDragControls.start(event)}
+                className="absolute inset-x-12 top-0 flex h-8 touch-none cursor-grab items-start justify-center pt-2 active:cursor-grabbing"
+              >
+                <span className="h-1.5 w-11 rounded-full bg-white/20" />
+              </div>
+              {mobileSheetState !== "collapsed" && (
+                <button
+                  type="button"
+                  onClick={() => setMobileSheetState("collapsed")}
+                  className="absolute right-3 top-1 rounded-lg px-2 py-1 text-[11px] font-bold text-[#72e2d3]"
+                >
+                  지도 크게 보기
+                </button>
+              )}
+            </div>
+          )}
+
+          {isMobileSheet && mobileSheetState === "collapsed" && selected && snapshot && (
+            <button
+              type="button"
+              onClick={() => setMobileSheetState("half")}
+              className="block w-full px-4 pb-4 text-left"
+              aria-label="PlaySafe 상세 패널 열기"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate text-[15px] font-bold leading-6 text-white">{selected.place.name}</div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {walkingRoute && (
+                      <span className="rounded-full bg-[#53d6c7]/10 px-2 py-1 text-[11px] font-bold text-[#79e4d7]">
+                        도보 {walkingRoute.durationMinutes}분
+                      </span>
+                    )}
+                    {walkingRoute?.quality.traceStatus === "available" && (
+                      <span className="rounded-full bg-[#53d6c7]/10 px-2 py-1 text-[11px] font-bold text-[#79e4d7]">
+                        분리보행로 {walkingRoute.quality.pedestrianOnlyPct}%
+                      </span>
+                    )}
+                    {betterTimeLabel && (
+                      <span className="rounded-full bg-[#d9bd63]/10 px-2 py-1 text-[11px] font-bold text-[#e7cf82]">
+                        {betterTimeLabel} +{betterTimeDelta}점
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className={"text-[22px] font-black tabular-nums " + fitTone(selected.fitScore)}>
+                    {selected.fitScore.toFixed(0)}
+                  </div>
+                  <div className="text-[11px] text-[#74838c]">상세 보기 ↑</div>
+                </div>
+              </div>
+            </button>
+          )}
+
           <div
             data-playsafe-panel-scroll
-            className="box-border w-full overflow-x-hidden overflow-y-auto overscroll-contain"
-            style={{ maxHeight: "calc(100dvh - 98px)" }}
+            className={"box-border w-full overflow-x-hidden overflow-y-auto overscroll-contain " + (
+              isMobileSheet && mobileSheetState === "collapsed" ? "hidden" : ""
+            )}
+            style={{
+              maxHeight: isMobileSheet
+                ? Math.max(0, mobileSheetMaxHeight - 32)
+                : "calc(100dvh - 98px)",
+            }}
           >
             <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
               <div
@@ -547,6 +713,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   <input
                     value={query}
                     onFocus={() => {
+                      if (isMobileSheet) setMobileSheetState("expanded");
                       if (searching || searchResults.length > 0) setSearchOpen(true);
                     }}
                     onChange={(event) => {
@@ -899,7 +1066,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     {walkingRoute && !routeLoading && (
                       <button
                         type="button"
-                        onClick={() => triggerMapView("route")}
+                        onClick={showRouteOnMap}
                         className="shrink-0 text-[12px] font-bold leading-5 text-[#72e2d3] hover:text-[#9af0e6]"
                       >
                         지도에서 보기
@@ -1159,7 +1326,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             )}
             </div>
           </div>
-        </aside>
+        </motion.aside>
 
         {loading && snapshot && (
           <div className="pointer-events-none absolute right-4 top-[78px] z-20 rounded-xl bg-[#081116]/80 px-3 py-2 text-[12px] leading-5 text-[#93a1aa] backdrop-blur-xl max-[640px]:right-2">
