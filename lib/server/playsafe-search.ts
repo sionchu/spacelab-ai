@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import type { GeoPoint } from "@/src/types";
 import {
+  searchNominatimPlace,
   searchVWorldAddress,
   searchVWorldPlace,
   type AddressSearchResult,
@@ -23,7 +24,7 @@ export type PlaySafeSearchResult = {
   address: string;
   point: GeoPoint;
   kind: PlaySafeSearchKind;
-  source: "kapt" | "public-data" | "vworld";
+  source: "kapt" | "public-data" | "vworld" | "osm";
   score: number;
 };
 type ApartmentEntry = {
@@ -149,7 +150,10 @@ function candidateScore(
   if (queryKey.startsWith(titleKey) && candidateRatio >= 0.65) score += 150;
   if (titleKey.includes(queryKey)) score += 260;
   if (queryKey.includes(titleKey) && candidateRatio >= 0.65) score += 120;
-  if (addressKey.includes(queryKey)) score += 230;
+  if (addressKey.includes(queryKey)) {
+    score += 230;
+    if (queryKey.length >= 6) score += 620;
+  }
 
   const titleSimilarity = diceSimilarity(queryKey, titleKey);
   const coreSimilarity = diceSimilarity(queryCore.core, titleCore.core);
@@ -161,8 +165,9 @@ function candidateScore(
 function minimumScore(query: string) {
   const length = normalizeSearchText(query).length;
   if (length <= 2) return 360;
-  if (length <= 4) return 260;
-  return 220;
+  if (length <= 4) return 280;
+  if (length <= 7) return 300;
+  return 320;
 }
 
 function indexedLocal(
@@ -250,6 +255,7 @@ async function loadSearchIndex(): Promise<SearchIndex> {
     addPublic(publicPayload.datasets.childZones.rows, "childFacility", "zone");
     addPublic(publicPayload.datasets.childCenters.rows, "childFacility", "center");
     addPublic(publicPayload.datasets.toilets.rows, "toilet", "toilet");
+
     return { apartments, publicPlaces };
   })();
 
@@ -280,6 +286,28 @@ function averagePoint(points: GeoPoint[]) {
     lat: points.reduce((sum, item) => sum + item.lat, 0) / points.length,
   };
 }
+
+function apartmentLookupQueries(candidate: IndexedLocal) {
+  const variants: string[] = [];
+  const add = (value: string) => {
+    const next = value.trim();
+    if (next && !variants.includes(next)) variants.push(next);
+  };
+
+  const latinized = candidate.title
+    .replace(/엘지/gi, "LG")
+    .replace(/에스케이/gi, "SK")
+    .replace(/엘에이치/gi, "LH")
+    .replace(/케이티/gi, "KT");
+
+  add(latinized.endsWith("아파트") ? latinized : latinized + "아파트");
+  add(candidate.title.endsWith("아파트") ? candidate.title : candidate.title + "아파트");
+  for (const address of candidate.addresses.slice(0, 3)) add(address);
+  add(candidate.title);
+
+  return variants.slice(0, 5);
+}
+
 async function resolveApartment(
   candidate: IndexedLocal,
   score: number,
@@ -322,6 +350,17 @@ async function resolveApartment(
       const placeResults = await searchVWorldPlace(candidate.title).catch(() => []);
       point = placeResults[0]?.point;
     }
+
+    if (!point && score >= 600) {
+      for (const lookupQuery of apartmentLookupQueries(candidate).slice(0, 3)) {
+        const osmResults = await searchNominatimPlace(lookupQuery, 3).catch(() => []);
+        const best = osmResults[0];
+        if (!best) continue;
+        point = best.point;
+        break;
+      }
+    }
+
     apartmentPointCache.set(candidate.id, point);
   }
 
@@ -347,23 +386,26 @@ function searchVariants(
   }
   return variants.slice(0, 3);
 }
-function fromVWorld(
+function fromProvider(
   query: string,
   item: AddressSearchResult,
+  source: "vworld" | "osm",
 ): PlaySafeSearchResult {
   const kind: PlaySafeSearchKind = item.kind === "road"
     ? "road"
     : item.kind === "parcel"
       ? "parcel"
       : "place";
-  const baseScore = kind === "place" ? 105 : kind === "road" ? 95 : 88;
+  const baseScore = source === "osm"
+    ? (kind === "place" ? 135 : kind === "road" ? 120 : 112)
+    : (kind === "place" ? 105 : kind === "road" ? 95 : 88);
   return {
-    id: "vworld:" + item.id,
+    id: source + ":" + item.id,
     title: item.title,
     address: item.address,
     point: item.point,
     kind,
-    source: "vworld",
+    source,
     score: candidateScore(
       query,
       normalizeSearchText(item.title),
@@ -378,6 +420,18 @@ function distanceMeters(a: GeoPoint, b: GeoPoint) {
   const x = (a.lon - b.lon) * 111_320 * Math.cos(lat);
   const y = (a.lat - b.lat) * 111_320;
   return Math.hypot(x, y);
+}
+
+function proximityScore(point: GeoPoint, bias?: GeoPoint) {
+  if (!bias) return 0;
+  const distance = distanceMeters(point, bias);
+  if (distance <= 1_000) return 2_200;
+  if (distance <= 3_000) return 1_700;
+  if (distance <= 10_000) return 1_100;
+  if (distance <= 30_000) return 500;
+  if (distance <= 80_000) return 100;
+  if (distance <= 120_000) return -500;
+  return -1_500;
 }
 function semanticallySame(a: PlaySafeSearchResult, b: PlaySafeSearchResult) {
   const aKey = normalizeSearchText(a.title);
@@ -412,11 +466,13 @@ function dedupeRanked(items: PlaySafeSearchResult[]) {
 }
 export async function searchPlaySafePlaces(
   query: string,
+  bias?: GeoPoint,
 ): Promise<PlaySafeSearchResult[]> {
   const trimmed = query.trim();
   if (normalizeSearchText(trimmed).length < 2) return [];
 
-  const cacheKey = normalizeSearchText(trimmed);
+  const cacheKey = normalizeSearchText(trimmed)
+    + (bias ? "|" + bias.lon.toFixed(3) + "," + bias.lat.toFixed(3) : "");
   const cached = queryCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) return cached.items;
 
@@ -436,15 +492,33 @@ export async function searchPlaySafePlaces(
       } satisfies PlaySafeSearchResult]
     : []);
   const variants = searchVariants(trimmed, apartmentMatches);
-  const [resolvedApartments, placeSettled, addressResults] = await Promise.all([
+  const topApartmentScore = apartmentMatches[0]?.score ?? 0;
+  const secondApartmentScore = apartmentMatches[1]?.score ?? 0;
+  const apartmentIsStrong = topApartmentScore >= 600;
+  const apartmentIsAmbiguous = apartmentIsStrong
+    && secondApartmentScore > 0
+    && topApartmentScore - secondApartmentScore < 90;
+  const apartmentsToResolve = apartmentIsStrong
+    ? apartmentMatches.slice(0, apartmentIsAmbiguous ? 3 : 1)
+    : [];
+
+  const [
+    resolvedApartments,
+    placeSettled,
+    addressResults,
+    osmResults,
+  ] = await Promise.all([
     Promise.all(
-      apartmentMatches.slice(0, 2).map(({ item, score }) =>
+      apartmentsToResolve.map(({ item, score }) =>
         resolveApartment(item, score)),
     ),
     Promise.allSettled(
       variants.map((variant) => searchVWorldPlace(variant)),
     ),
     searchVWorldAddress(trimmed).catch(() => []),
+    apartmentIsStrong
+      ? Promise.resolve([])
+      : searchNominatimPlace(trimmed, 8).catch(() => []),
   ]);
 
   const vworldItems: AddressSearchResult[] = [];
@@ -458,9 +532,15 @@ export async function searchPlaySafePlaces(
       (item): item is PlaySafeSearchResult => Boolean(item),
     ),
     ...publicResults,
-    ...vworldItems.map((item) => fromVWorld(trimmed, item)),
-  ];
-  const items = dedupeRanked(combined);
+    ...vworldItems.map((item) => fromProvider(trimmed, item, "vworld")),
+    ...osmResults.map((item) => fromProvider(trimmed, item, "osm")),
+  ].map((item) => ({
+    ...item,
+    score: item.score + proximityScore(item.point, bias),
+  }));
+  const items = dedupeRanked(
+    combined.filter((item) => item.score >= 250),
+  );
   queryCache.set(cacheKey, {
     expiresAt: Date.now() + 10 * 60_000,
     items,

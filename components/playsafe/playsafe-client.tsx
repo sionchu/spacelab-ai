@@ -31,7 +31,7 @@ type SearchResult = {
   address: string;
   point: GeoPoint;
   kind?: "apartment" | "park" | "childFacility" | "toilet" | "place" | "road" | "parcel";
-  source?: "kapt" | "public-data" | "vworld";
+  source?: "kapt" | "public-data" | "vworld" | "osm";
   score?: number;
 };
 
@@ -141,8 +141,13 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     signal?: AbortSignal,
   ): Promise<SearchResult[]> {
     const requestId = ++searchRequestRef.current;
+    const params = new URLSearchParams({
+      q: searchQuery.trim(),
+      lon: String(center.lon),
+      lat: String(center.lat),
+    });
     const response = await fetch(
-      "/api/vworld/search?q=" + encodeURIComponent(searchQuery.trim()),
+      "/api/vworld/search?" + params,
       signal ? { signal } : undefined,
     );
     const payload = await response.json();
@@ -150,38 +155,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     if (requestId !== searchRequestRef.current) return [];
     return payload as SearchResult[];
   }
-
-  useEffect(() => {
-    const searchQuery = query.trim();
-    if (!searchOpen || searchQuery.length < 2) {
-      if (searchQuery.length < 2) setSearchResults([]);
-      return;
-    }
-
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => {
-      setSearching(true);
-      setMessage(undefined);
-      void loadSearchResults(searchQuery, controller.signal)
-        .then((results) => {
-          if (!controller.signal.aborted) setSearchResults(results);
-        })
-        .catch((error) => {
-          if (!controller.signal.aborted && error?.name !== "AbortError") {
-            setMessage(error instanceof Error ? error.message : String(error));
-            setSearchResults([]);
-          }
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setSearching(false);
-        });
-    }, 250);
-
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query, searchOpen]);
 
   async function search(event: FormEvent) {
     event.preventDefault();
@@ -191,9 +164,9 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     setSearching(true);
     setMessage(undefined);
     try {
+      setSearchResults([]);
       const results = await loadSearchResults(searchQuery);
       setSearchResults(results);
-      if (results.length === 1) chooseSearchResult(results[0]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
       setSearchResults([]);
@@ -423,7 +396,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
               <div
                 className="relative"
-                onFocus={() => setSearchOpen(true)}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     setSearchOpen(false);
@@ -438,10 +410,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   <Search className="size-[18px] shrink-0 text-[#7a8992]" />
                   <input
                     value={query}
-                    onFocus={() => setSearchOpen(true)}
+                    onFocus={() => {
+                      if (searching || searchResults.length > 0) setSearchOpen(true);
+                    }}
                     onChange={(event) => {
+                      searchRequestRef.current += 1;
                       setQuery(event.target.value);
-                      setSearchOpen(true);
+                      setSearchResults([]);
+                      setSearchOpen(false);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Escape") {
@@ -451,7 +427,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                     }}
                     placeholder="아파트·건물·동네·주소 검색"
                     aria-label="위치 검색"
-                    aria-autocomplete="list"
                     aria-controls="playsafe-search-results"
                     aria-expanded={searchOpen}
                     className="min-w-0 flex-1 bg-transparent text-[15px] font-medium leading-6 text-white outline-none placeholder:text-[#65747d]"

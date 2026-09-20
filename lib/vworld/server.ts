@@ -153,6 +153,59 @@ export async function searchVWorldAddress(query: string): Promise<AddressSearchR
     result.status === "fulfilled" ? result.value : []);
 }
 
+export async function searchNominatimPlace(
+  query: string,
+  limit = 6,
+): Promise<AddressSearchResult[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  const url = buildUrl("https://nominatim.openstreetmap.org/search", {
+    q: trimmed,
+    format: "jsonv2",
+    limit: Math.max(1, Math.min(8, limit)),
+    countrycodes: "kr",
+    addressdetails: 1,
+    "accept-language": "ko",
+  });
+
+  return withNominatimRateLimit(async () => {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": APP_USER_AGENT,
+        Referer: "https://github.com/sionchu/spacelab-ai",
+      },
+      signal: AbortSignal.timeout(10_000),
+      cache: "no-store",
+    });
+    if (!response.ok) return [];
+
+    const payload = await response.json() as Array<Record<string, any>>;
+    return payload.flatMap((item, index) => {
+      const lon = Number(item.lon);
+      const lat = Number(item.lat);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) return [];
+
+      const displayName = String(item.display_name || "").trim();
+      const title = String(
+        item.name
+          || item.namedetails?.name
+          || displayName.split(",")[0]
+          || trimmed,
+      ).trim();
+
+      return [{
+        id: "osm-" + String(item.place_id ?? index),
+        title,
+        address: displayName || title,
+        point: { lon, lat },
+        kind: "osm" as const,
+      }];
+    });
+  });
+}
+
 async function requestJson(url: URL) {
   const response = await fetch(url, { cache: "no-store" });
   const text = await response.text();
