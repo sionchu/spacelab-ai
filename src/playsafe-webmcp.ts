@@ -22,6 +22,19 @@ export type PlaySafeWebMcpBridge = {
   getSnapshot: () => PlaySafeSnapshot | undefined;
   getSelectedPlaceId: () => string | undefined;
   selectPlace: (placeId: string) => void;
+  searchLocation: (query: string) => Promise<{
+    query: string;
+    title: string;
+    address: string;
+    point: { lon: number; lat: number };
+    kind?: string;
+    snapshot: PlaySafeSnapshot;
+  }>;
+  setPlayContext: (input: {
+    childAge?: number;
+    analysisTime?: string;
+    durationMinutes?: number;
+  }) => Promise<PlaySafeSnapshot>;
 };
 
 export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
@@ -39,6 +52,154 @@ export function registerPlaySafeTools(bridge: PlaySafeWebMcpBridge) {
     if (!current) throw new Error("PlaySafe snapshot is not loaded yet.");
     return current;
   };
+
+  register({
+    name: "search_location",
+    title: "Search a location and move PlaySafe there",
+    description: "Search an apartment, station, building, neighborhood or address by text, move the PlaySafe map to the best matching result, and wait until a fresh nearby playground analysis is loaded for that location.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          minLength: 2,
+          description: "Location text such as 부천 상동역, 판교역, or 힐스테이트자이계양.",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    },
+    execute: async (input: { query: string }) => bridge.searchLocation(input.query),
+  });
+
+  register({
+    name: "set_play_context",
+    title: "Set child age, analysis time and activity duration",
+    description: "Update the PlaySafe child profile and visit conditions, then wait for a fresh analysis. Use this before comparing or recommending places when the user specifies an age, time, or planned duration.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        childAge: {
+          type: "integer",
+          minimum: 3,
+          maximum: 12,
+          description: "Child age in years.",
+        },
+        analysisTime: {
+          type: "string",
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
+          description: "Local analysis time in HH:MM, for example 15:00.",
+        },
+        durationMinutes: {
+          type: "integer",
+          minimum: 10,
+          maximum: 120,
+          description: "Planned outdoor activity duration in minutes.",
+        },
+      },
+      additionalProperties: false,
+    },
+    execute: async (input: {
+      childAge?: number;
+      analysisTime?: string;
+      durationMinutes?: number;
+    }) => bridge.setPlayContext(input),
+  });
+
+  register({
+    name: "plan_playground_visit",
+    title: "Plan a playground or park visit from one request",
+    description: "End-to-end PlaySafe action for prompts that include a location plus child age, visit time, or duration. It searches the location, updates the PlaySafe context, waits for fresh analysis, and returns the best nearby recommendations. Use this instead of manually editing the UI.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        location: {
+          type: "string",
+          minLength: 2,
+          description: "Place to search, for example 부천 상동역.",
+        },
+        childAge: {
+          type: "integer",
+          minimum: 3,
+          maximum: 12,
+        },
+        analysisTime: {
+          type: "string",
+          pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
+          description: "Local time in HH:MM.",
+        },
+        durationMinutes: {
+          type: "integer",
+          minimum: 10,
+          maximum: 120,
+        },
+        placeKind: {
+          type: "string",
+          enum: ["any", "park", "playground"],
+          description: "Preferred result type. Use park when the user asks for a 공원, playground for 놀이터, otherwise any.",
+        },
+      },
+      required: ["location"],
+      additionalProperties: false,
+    },
+    execute: async (input: {
+      location: string;
+      childAge?: number;
+      analysisTime?: string;
+      durationMinutes?: number;
+      placeKind?: "any" | "park" | "playground";
+    }) => {
+      const location = await bridge.searchLocation(input.location);
+      const state = await bridge.setPlayContext({
+        childAge: input.childAge,
+        analysisTime: input.analysisTime,
+        durationMinutes: input.durationMinutes,
+      });
+      const preferred = input.placeKind && input.placeKind !== "any"
+        ? state.assessments.filter((item) => item.place.kind === input.placeKind)
+        : state.assessments;
+      const ranked = preferred.length ? preferred : state.assessments;
+      const best = ranked[0];
+      if (best) bridge.selectPlace(best.place.id);
+
+      return {
+        location: {
+          query: input.location,
+          title: location.title,
+          address: location.address,
+          point: location.point,
+          kind: location.kind,
+        },
+        context: state.query,
+        preference: input.placeKind ?? "any",
+        recommendation: best
+          ? {
+              placeId: best.place.id,
+              placeName: best.place.name,
+              kind: best.place.kind,
+              fitScore: Math.round(best.fitScore),
+              label: best.label,
+              distanceM: Math.round(best.place.distanceM),
+              shadePct: Math.round(best.shadePct),
+              uvIndex: Number(best.uvIndex.toFixed(1)),
+              reasons: best.reasons,
+            }
+          : state.recommendation,
+        nearby: ranked.slice(0, 5).map((item) => ({
+          id: item.place.id,
+          name: item.place.name,
+          kind: item.place.kind,
+          address: item.place.address,
+          distanceM: Math.round(item.place.distanceM),
+          fitScore: Math.round(item.fitScore),
+          shadePct: Math.round(item.shadePct),
+          uvIndex: Number(item.uvIndex.toFixed(1)),
+          label: item.label,
+          reasons: item.reasons,
+        })),
+      };
+    },
+  });
 
   register({
     name: "get_playsafe_snapshot",

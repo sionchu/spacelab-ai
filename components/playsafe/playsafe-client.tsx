@@ -140,10 +140,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   const sheetDragStartRef = useRef<MobileSheetState>("half");
   const snapshotRef = useRef(snapshot);
   const selectedRef = useRef(selectedPlaceId);
+  const centerRef = useRef(center);
+  const dateRef = useRef(date);
   const searchRequestRef = useRef(0);
   const preferNearestOnNextSnapshotRef = useRef(false);
   snapshotRef.current = snapshot;
   selectedRef.current = selectedPlaceId;
+  centerRef.current = center;
+  dateRef.current = date;
 
   const analysisAt = `${date}T${timeFromMinutes(committedMinutes)}`;
   const previewAt = `${date}T${timeFromMinutes(minutes)}`;
@@ -216,15 +220,6 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
   }, [analysisAt, center.lat, center.lon, childAge, duration]);
 
   useEffect(() => {
-    const registration = registerPlaySafeTools({
-      getSnapshot: () => snapshotRef.current,
-      getSelectedPlaceId: () => selectedRef.current,
-      selectPlace,
-    });
-    return registration.dispose;
-  }, []);
-
-  useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({
       lon: String(center.lon),
@@ -260,10 +255,11 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     signal?: AbortSignal,
   ): Promise<SearchResult[]> {
     const requestId = ++searchRequestRef.current;
+    const currentCenter = centerRef.current;
     const params = new URLSearchParams({
       q: searchQuery.trim(),
-      lon: String(center.lon),
-      lat: String(center.lat),
+      lon: String(currentCenter.lon),
+      lat: String(currentCenter.lat),
     });
     const response = await fetch(
       "/api/vworld/search?" + params,
@@ -273,6 +269,92 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     if (!response.ok) throw new Error(payload?.error || "위치 검색 실패");
     if (requestId !== searchRequestRef.current) return [];
     return payload as SearchResult[];
+  }
+
+  function waitForSnapshot(
+    predicate: (value: PlaySafeSnapshot) => boolean,
+    timeoutMs = 30_000,
+  ): Promise<PlaySafeSnapshot> {
+    return new Promise((resolve, reject) => {
+      const startedAt = Date.now();
+      const check = () => {
+        const current = snapshotRef.current;
+        if (current && predicate(current)) {
+          resolve(current);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          reject(new Error("PlaySafe analysis did not finish in time."));
+          return;
+        }
+        window.setTimeout(check, 120);
+      };
+      check();
+    });
+  }
+
+  async function webMcpSearchLocation(searchQuery: string) {
+    const normalizedQuery = searchQuery.trim();
+    if (normalizedQuery.length < 2) throw new Error("Location query must be at least 2 characters.");
+
+    const results = await loadSearchResults(normalizedQuery);
+    const result = results[0];
+    if (!result) throw new Error("No location found for " + normalizedQuery + ".");
+
+    chooseSearchResult(result);
+    setQuery(normalizedQuery);
+    const next = await waitForSnapshot((value) =>
+      Math.abs(value.query.center.lon - result.point.lon) < 0.00001
+      && Math.abs(value.query.center.lat - result.point.lat) < 0.00001,
+    );
+
+    return {
+      query: normalizedQuery,
+      title: result.title,
+      address: result.address,
+      point: result.point,
+      kind: result.kind,
+      snapshot: next,
+    };
+  }
+
+  async function webMcpSetPlayContext(input: {
+    childAge?: number;
+    analysisTime?: string;
+    durationMinutes?: number;
+  }) {
+    const current = snapshotRef.current;
+    const nextAge = input.childAge ?? current?.query.childAge ?? childAge;
+    const nextDuration = input.durationMinutes ?? current?.query.activityMinutes ?? duration;
+
+    if (!Number.isInteger(nextAge) || nextAge < 3 || nextAge > 12) {
+      throw new Error("childAge must be an integer from 3 to 12.");
+    }
+    if (!Number.isInteger(nextDuration) || nextDuration < 10 || nextDuration > 120) {
+      throw new Error("durationMinutes must be an integer from 10 to 120.");
+    }
+
+    const currentTime = current?.query.requestedAt.slice(11, 16);
+    let nextMinutes = currentTime && /^([01]\d|2[0-3]):[0-5]\d$/.test(currentTime)
+      ? Number(currentTime.slice(0, 2)) * 60 + Number(currentTime.slice(3, 5))
+      : committedMinutes;
+    if (input.analysisTime !== undefined) {
+      const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(input.analysisTime);
+      if (!match) throw new Error("analysisTime must use HH:MM, for example 15:00.");
+      nextMinutes = Number(match[1]) * 60 + Number(match[2]);
+    }
+
+    setChildAge(nextAge);
+    setDuration(nextDuration);
+    setMinutes(nextMinutes);
+    setCommittedMinutes(nextMinutes);
+
+    const requestedAt = dateRef.current + "T" + timeFromMinutes(nextMinutes);
+    return waitForSnapshot((value) =>
+      value.query.childAge === nextAge
+      && value.query.activityMinutes === nextDuration
+      && value.query.requestedAt.slice(0, 16) === requestedAt,
+    );
   }
 
   async function search(event: FormEvent) {
@@ -357,6 +439,17 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
       setViewAction(undefined);
     }
   }
+
+  useEffect(() => {
+    const registration = registerPlaySafeTools({
+      getSnapshot: () => snapshotRef.current,
+      getSelectedPlaceId: () => selectedRef.current,
+      selectPlace,
+      searchLocation: webMcpSearchLocation,
+      setPlayContext: webMcpSetPlayContext,
+    });
+    return registration.dispose;
+  }, []);
 
   function selectRouteOrigin(originId: string) {
     setRouteOriginId(originId);

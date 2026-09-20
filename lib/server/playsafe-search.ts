@@ -442,15 +442,62 @@ async function resolveApartment(
   };
 }
 
+function stationQueryIntent(query: string) {
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return undefined;
+  const station = tokens[tokens.length - 1];
+  if (!station.endsWith("역") || station.length < 2) return undefined;
+  const region = tokens.slice(0, -1).join(" ");
+  return {
+    region,
+    regionKey: normalizeSearchText(region),
+    station,
+    stationKey: normalizeSearchText(station),
+    stationBaseKey: normalizeSearchText(station.slice(0, -1)),
+  };
+}
+
 function searchVariants(
   query: string,
   apartmentMatches: Array<{ item: IndexedLocal; score: number }>,
 ) {
-  const variants = [query.trim()];
-  for (const match of apartmentMatches.slice(0, 2)) {
-    if (!variants.includes(match.item.title)) variants.push(match.item.title);
+  const variants: string[] = [];
+  const add = (value: string) => {
+    const next = value.trim();
+    if (next && !variants.includes(next)) variants.push(next);
+  };
+
+  add(query);
+  const stationIntent = stationQueryIntent(query);
+  if (stationIntent) {
+    add(stationIntent.station);
+    add(stationIntent.station.slice(0, -1));
+    add(stationIntent.station + " " + stationIntent.region);
   }
-  return variants.slice(0, 3);
+
+  for (const match of apartmentMatches.slice(0, 2)) add(match.item.title);
+  return variants.slice(0, 6);
+}
+
+function stationIntentScore(query: string, item: PlaySafeSearchResult) {
+  const intent = stationQueryIntent(query);
+  if (!intent) return 0;
+
+  const titleKey = normalizeSearchText(item.title);
+  const addressKey = normalizeSearchText(item.address);
+  let score = 0;
+
+  if (intent.regionKey && addressKey.includes(intent.regionKey)) score += 1_800;
+  if (
+    titleKey === intent.stationKey
+    || titleKey === intent.stationBaseKey
+    || (intent.stationBaseKey && titleKey.includes(intent.stationBaseKey))
+  ) {
+    score += 900;
+  }
+  if (item.kind === "place") score += 500;
+  if (addressKey.includes("역") || addressKey.includes("지하철")) score += 500;
+  return score;
 }
 function fromProvider(
   query: string,
@@ -598,7 +645,7 @@ export async function searchPlaySafePlaces(
     resolvedApartments,
     placeSettled,
     addressResults,
-    osmResults,
+    osmSettled,
     childFacilityResults,
   ] = await Promise.all([
     Promise.all(
@@ -611,7 +658,14 @@ export async function searchPlaySafePlaces(
     searchVWorldAddress(trimmed).catch(() => []),
     apartmentIsStrong
       ? Promise.resolve([])
-      : searchNominatimPlace(trimmed, 8, bias).catch(() => []),
+      : Promise.allSettled(
+          variants.map((variant) =>
+            searchNominatimPlace(
+              variant,
+              8,
+              stationQueryIntent(trimmed) ? undefined : bias,
+            )),
+        ),
     shouldSearchChildFacilities
       ? searchChildFacilities(trimmed, 5, bias).catch(() => [])
       : Promise.resolve([]),
@@ -623,6 +677,11 @@ export async function searchPlaySafePlaces(
   }
   vworldItems.push(...addressResults);
 
+  const osmItems: AddressSearchResult[] = [];
+  for (const result of osmSettled) {
+    if (result.status === "fulfilled") osmItems.push(...result.value);
+  }
+
   const combined = [
     ...resolvedApartments.filter(
       (item): item is PlaySafeSearchResult => Boolean(item),
@@ -630,10 +689,12 @@ export async function searchPlaySafePlaces(
     ...publicResults,
     ...childFacilityResults.map((item) => fromChildFacility(trimmed, item)),
     ...vworldItems.map((item) => fromProvider(trimmed, item, "vworld")),
-    ...osmResults.map((item) => fromProvider(trimmed, item, "osm")),
+    ...osmItems.map((item) => fromProvider(trimmed, item, "osm")),
   ].map((item) => ({
     ...item,
-    score: item.score + proximityScore(item.point, bias),
+    score: item.score
+      + proximityScore(item.point, bias)
+      + stationIntentScore(trimmed, item),
   }));
   const items = dedupeRanked(
     combined.filter((item) => item.score >= 250),
