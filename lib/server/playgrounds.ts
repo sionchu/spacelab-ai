@@ -153,50 +153,54 @@ function buildingHeightM(tags: Record<string, string>) {
 function choosePlaces(items: PlayPlace[], limit: number) {
   const nameRank = (item: PlayPlace) =>
     item.name.startsWith("이름 없는") ? 1 : 0;
-  items.sort((a, b) => {
-    const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
-    return kindRank(a) - kindRank(b) || nameRank(a) - nameRank(b) || a.distanceM - b.distanceM;
-  });
+  const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
+
+  const ordered = [...items].sort((a, b) =>
+    a.distanceM - b.distanceM
+    || kindRank(a) - kindRank(b)
+    || nameRank(a) - nameRank(b));
 
   const selected: PlayPlace[] = [];
-  for (const item of items) {
+  for (const item of ordered) {
     const duplicateIndex = selected.findIndex((prior) =>
       distanceM(prior.point.lon, prior.point.lat, item.point.lon, item.point.lat) < 35
       && prior.kind === item.kind);
 
     if (duplicateIndex < 0) {
       selected.push(item);
-    } else {
-      const prior = selected[duplicateIndex];
-      const geometrySource = prior.boundary?.length
-        ? prior
-        : item.boundary?.length
-          ? item
-          : prior;
-      const betterName = nameRank(item) < nameRank(prior) ? item.name : prior.name;
-      const sourceNames = [
-        prior.tags.source,
-        prior.tags.sources,
-        item.tags.source,
-        item.tags.sources,
-      ].filter(Boolean).join(" + ");
-
-      selected[duplicateIndex] = {
-        ...geometrySource,
-        name: betterName,
-        address: prior.address || item.address,
-        distanceM: Math.min(prior.distanceM, item.distanceM),
-        tags: {
-          ...prior.tags,
-          ...item.tags,
-          sources: Array.from(new Set(sourceNames.split(" + ").filter(Boolean))).join(" + "),
-        },
-      };
+      continue;
     }
 
-    if (selected.length >= limit) break;
+    const prior = selected[duplicateIndex];
+    const geometrySource = prior.boundary?.length
+      ? prior
+      : item.boundary?.length
+        ? item
+        : prior;
+    const betterName = nameRank(item) < nameRank(prior) ? item.name : prior.name;
+    const sourceNames = [
+      prior.tags.source,
+      prior.tags.sources,
+      item.tags.source,
+      item.tags.sources,
+    ].filter(Boolean).join(" + ");
+
+    selected[duplicateIndex] = {
+      ...geometrySource,
+      name: betterName,
+      address: prior.address || item.address,
+      distanceM: Math.min(prior.distanceM, item.distanceM),
+      tags: {
+        ...prior.tags,
+        ...item.tags,
+        sources: Array.from(new Set(sourceNames.split(" + ").filter(Boolean))).join(" + "),
+      },
+    };
   }
-  return selected;
+
+  return selected
+    .sort((a, b) => a.distanceM - b.distanceM || kindRank(a) - kindRank(b))
+    .slice(0, limit);
 }
 
 async function nearbyVWorldPlayPlaces(

@@ -3,6 +3,7 @@ import { gunzipSync } from "node:zlib";
 import path from "node:path";
 import type { GeoPoint } from "@/src/types";
 import { searchChildFacilities } from "@/lib/server/playsafe-child-facilities";
+import { nearbyOfficialPlaygrounds } from "@/lib/server/playsafe-cpf";
 import {
   searchNominatimPlace,
   searchVWorldAddress,
@@ -411,6 +412,18 @@ async function resolveApartment(
         if (!best) continue;
         point = best.point;
         break;
+      }
+    }
+
+    if (point) {
+      const apartmentKey = normalizeSearchText(candidate.title);
+      const officialPlaces = await nearbyOfficialPlaygrounds(point, 1_500, 80).catch(() => []);
+      const matchingPlaygrounds = officialPlaces.filter((place) =>
+        normalizeSearchText(place.name).includes(apartmentKey));
+      const officialCenter = averagePoint(matchingPlaygrounds.map((place) => place.point));
+
+      if (officialCenter && distanceMeters(point, officialCenter) <= 2_000) {
+        point = officialCenter;
       }
     }
 

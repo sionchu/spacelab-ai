@@ -742,7 +742,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 : "calc(100dvh - 98px)",
             }}
           >
-            <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
+            <div data-playsafe-safe-area style={{ padding: "18px 20px 28px", lineHeight: 1.45 }}>
               <div
                 className={"relative " + (showMobileSearch ? "" : "hidden")}
                 onBlur={(event) => {
@@ -863,8 +863,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       <div className="min-w-0 flex-1">
                         <strong className="block truncate text-[14px] leading-6">{assessment.place.name}</strong>
                         <span className="mt-1.5 block truncate text-[13px] leading-5 text-[#7f8d96]">
-                          {Math.round(assessment.place.distanceM)}m · 그늘 {assessment.shadePct.toFixed(0)}%
-                          {assessment.place.address ? " · " + assessment.place.address : ""}
+                          {Math.round(assessment.place.distanceM)}m · 그늘 {assessment.shadePct.toFixed(0)}% · {assessment.place.kind === "park" ? "공원" : "놀이터"}
                         </span>
                       </div>
                       <AnimatedNumber
@@ -1015,15 +1014,30 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       )}
                     </div>
 
-                    <div className="mt-5 grid grid-cols-3 gap-3">
-                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">예상 그늘</div><AnimatedNumber value={selected.shadePct} suffix="%" className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
-                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">체감온도</div><AnimatedNumber value={snapshot.weather.apparentTemperatureC} digits={1} suffix="°" className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
-                      <div><div className="text-[13px] leading-5 text-[#7b8a93]">UV</div><AnimatedNumber value={selected.uvIndex} digits={1} className="mt-1 block text-[17px] font-bold tabular-nums" /></div>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[12px] font-semibold text-[#aab5bb]">
+                        {Math.round(selected.place.distanceM)}m
+                      </span>
+                      <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[12px] font-semibold text-[#aab5bb]">
+                        그늘 <AnimatedNumber value={selected.shadePct} suffix="%" />
+                      </span>
+                      <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[12px] font-semibold text-[#aab5bb]">
+                        체감 <AnimatedNumber value={snapshot.weather.apparentTemperatureC} digits={1} suffix="°" />
+                      </span>
+                      <span className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[12px] font-semibold text-[#aab5bb]">
+                        UV <AnimatedNumber value={selected.uvIndex} digits={1} />
+                      </span>
                     </div>
 
-                    <p className="mt-5 text-[14px] leading-6 text-[#9aa7ae]">
-                      {selectedIsRecommended ? snapshot.recommendation?.summary : selected.reasons.slice(0, 3).join(" · ")}
-                    </p>
+                    <details className="group mt-3">
+                      <summary className="flex cursor-pointer list-none items-center justify-between py-1 text-[12px] font-semibold text-[#83929b] [&::-webkit-details-marker]:hidden">
+                        추천 이유
+                        <ChevronDown className="size-4 transition group-open:rotate-180" />
+                      </summary>
+                      <p className="mt-2 text-[13px] leading-6 text-[#87969e]">
+                        {selectedIsRecommended ? snapshot.recommendation?.summary : selected.reasons.slice(0, 3).join(" · ")}
+                      </p>
+                    </details>
 
                     {betterTimeLabel && (
                       <motion.div
@@ -1040,7 +1054,21 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                   </motion.section>
                 </AnimatePresence>
 
-                <section className="mt-5 border-t border-white/[0.06] pt-5">
+                <details className="group mt-5 border-t border-white/[0.06] pt-3">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
+                    <span className="flex min-w-0 items-center gap-2 text-[14px] font-bold text-[#dfe7eb]">
+                      <Footprints className="size-4 shrink-0 text-[#9bd4a3]" />
+                      가는 길
+                    </span>
+                    <span className="ml-auto truncate text-[12px] font-semibold text-[#7f8d96]">
+                      {walkingRoute && !routeLoading
+                        ? `도보 ${walkingRoute.durationMinutes}분 · ${walkingRoute.distanceM >= 1000 ? (walkingRoute.distanceM / 1000).toFixed(1) + "km" : walkingRoute.distanceM + "m"}`
+                        : routeLoading ? "계산 중…" : "출발지·경로 보기"}
+                    </span>
+                    <ChevronDown className="size-4 shrink-0 text-[#77858e] transition group-open:rotate-180" />
+                  </summary>
+                  <div className="pb-1">
+
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 text-[14px] font-bold leading-6 text-[#dfe7eb]">
@@ -1252,7 +1280,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                       </p>
                     </>
                   )}
-                </section>
+                                  </div>
+                </details>
 
                 <section className={"mt-6 bg-white/[0.035] px-4 py-4 " + (showMobileDiscovery ? "" : "hidden")}>
                   <div className="flex items-center gap-4">

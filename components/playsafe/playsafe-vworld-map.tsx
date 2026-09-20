@@ -352,8 +352,9 @@ export function PlaySafeVWorldMap({
         });
       });
 
-      for (const assessment of snapshot.assessments) {
+      snapshot.assessments.forEach((assessment, index) => {
         const isSelected = assessment.place.id === selectedPlaceId;
+        const showLabel = isSelected || index < 3;
         viewer.entities.add({
           id: "playsafe:place:" + assessment.place.id,
           name: assessment.place.name,
@@ -375,6 +376,7 @@ export function PlaySafeVWorldMap({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
+            show: showLabel,
             text: isSelected
               ? assessment.place.name + " · " + Math.round(assessment.fitScore)
               : assessment.place.name,
@@ -390,7 +392,7 @@ export function PlaySafeVWorldMap({
             showBackground: false,
           },
         });
-      }
+      });
 
       const selected = snapshot.assessments.find((item) => item.place.id === selectedPlaceId)
         ?? snapshot.assessments[0];

@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const [mapContext, weather, publicContext] = await Promise.all([
-      playSafeMapContext(lon, lat, 800, 4),
+      playSafeMapContext(lon, lat, 800, 12),
       playSafeWeather(lon, lat, requestedAt),
       playSafePublicContext({ lon, lat }),
     ]);
