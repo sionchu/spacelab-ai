@@ -257,8 +257,8 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           </div>
         )}
 
-        <aside className="absolute left-4 top-[82px] z-20 w-[392px] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-134px)] overflow-hidden rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[480px]:left-2 max-[480px]:w-[calc(100vw-16px)]">
-          <div className="max-h-[calc(100dvh-134px)] overflow-y-auto overscroll-contain p-5 [scrollbar-gutter:stable] max-[480px]:p-4">
+        <aside className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] max-h-[calc(100dvh-98px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[480px]:left-2 max-[480px]:w-[calc(100vw-16px)]">
+          <div className="box-border max-h-[calc(100dvh-98px)] w-full overflow-x-hidden overflow-y-auto overscroll-contain px-6 pb-8 pt-5 scroll-pb-8 max-[480px]:px-5 max-[480px]:pb-7">
             <form onSubmit={search} className="flex items-center gap-2 rounded-2xl bg-white/[0.055] px-3 py-2.5">
               <Search className="size-4 shrink-0 text-[#6f7f89]" />
               <input
