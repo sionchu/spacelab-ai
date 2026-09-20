@@ -72,6 +72,18 @@ VWORLD_DOMAIN=localhost
 
 Do not expose the VWorld key through `NEXT_PUBLIC_*`.
 
+PlaySafe can additionally merge the Ministry of the Interior and Safety SafeMap
+children's playground registry when a server-only SafeMap key is configured:
+
+```bash
+SAFEMAP_API_KEY=...
+```
+
+The integration reads official `IF_0007` facility records, keeps operating
+outdoor urban-park / housing-complex / mixed-use playgrounds, and merges nearby
+duplicates with OSM/VWorld candidates while preserving OSM polygon geometry
+when available. Never expose this key through `NEXT_PUBLIC_*`.
+
 Concept View is optional and requires a server-only OpenAI key:
 
 ```bash

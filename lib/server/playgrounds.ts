@@ -1,4 +1,5 @@
 import { searchVWorldPlaceNearby } from "@/lib/vworld/server";
+import { nearbyMoisPlaygrounds } from "@/lib/server/playsafe-safemap";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { PlayPlace, PlaySafeTree } from "@/src/playsafe";
 
@@ -147,18 +148,49 @@ function buildingHeightM(tags: Record<string, string>) {
 }
 
 function choosePlaces(items: PlayPlace[], limit: number) {
+  const nameRank = (item: PlayPlace) =>
+    item.name.startsWith("이름 없는") ? 1 : 0;
   items.sort((a, b) => {
     const kindRank = (item: PlayPlace) => item.kind === "playground" ? 0 : 1;
-    const namedRank = (item: PlayPlace) => item.tags.name || item.tags["name:ko"] ? 0 : 1;
-    return kindRank(a) - kindRank(b) || namedRank(a) - namedRank(b) || a.distanceM - b.distanceM;
+    return kindRank(a) - kindRank(b) || nameRank(a) - nameRank(b) || a.distanceM - b.distanceM;
   });
 
   const selected: PlayPlace[] = [];
   for (const item of items) {
-    const duplicate = selected.some((prior) =>
+    const duplicateIndex = selected.findIndex((prior) =>
       distanceM(prior.point.lon, prior.point.lat, item.point.lon, item.point.lat) < 35
       && prior.kind === item.kind);
-    if (!duplicate) selected.push(item);
+
+    if (duplicateIndex < 0) {
+      selected.push(item);
+    } else {
+      const prior = selected[duplicateIndex];
+      const geometrySource = prior.boundary?.length
+        ? prior
+        : item.boundary?.length
+          ? item
+          : prior;
+      const betterName = nameRank(item) < nameRank(prior) ? item.name : prior.name;
+      const sourceNames = [
+        prior.tags.source,
+        prior.tags.sources,
+        item.tags.source,
+        item.tags.sources,
+      ].filter(Boolean).join(" + ");
+
+      selected[duplicateIndex] = {
+        ...geometrySource,
+        name: betterName,
+        address: prior.address || item.address,
+        distanceM: Math.min(prior.distanceM, item.distanceM),
+        tags: {
+          ...prior.tags,
+          ...item.tags,
+          sources: Array.from(new Set(sourceNames.split(" + ").filter(Boolean))).join(" + "),
+        },
+      };
+    }
+
     if (selected.length >= limit) break;
   }
   return selected;
@@ -218,6 +250,7 @@ type PlaySafeMapContext = {
   places: PlayPlace[];
   buildings: FeatureCollection<Polygon>;
   trees: PlaySafeTree[];
+  playgroundSources: string[];
 };
 
 type MapContextCacheEntry = {
@@ -240,6 +273,7 @@ async function fetchPlaySafeMapContext(
   limit: number,
 ): Promise<PlaySafeMapContext> {
   const vworldPlacesPromise = nearbyVWorldPlayPlaces(lon, lat, radiusM).catch(() => []);
+  const moisPlacesPromise = nearbyMoisPlaygrounds({ lon, lat }, radiusM, 80).catch(() => []);
   const url = new URL("https://api.openstreetmap.org/api/0.6/map");
   url.searchParams.set("bbox", bbox(lon, lat, radiusM));
 
@@ -292,8 +326,17 @@ async function fetchPlaySafeMapContext(
     });
   }
 
-  placeItems.push(...await vworldPlacesPromise);
+  const [moisPlaces, vworldPlaces] = await Promise.all([
+    moisPlacesPromise,
+    vworldPlacesPromise,
+  ]);
+  placeItems.push(...moisPlaces, ...vworldPlaces);
   const places = choosePlaces(placeItems, limit);
+  const playgroundSources = [
+    "OpenStreetMap",
+    ...(moisPlaces.length ? ["MOIS SafeMap IF_0007"] : []),
+    ...(vworldPlaces.length ? ["VWorld nearby POI"] : []),
+  ];
   const trees: PlaySafeTree[] = [];
   for (const node of parsed.nodes.values()) {
     if (node.tags.natural !== "tree") continue;
@@ -343,6 +386,7 @@ async function fetchPlaySafeMapContext(
     places,
     buildings: { type: "FeatureCollection", features },
     trees,
+    playgroundSources,
   };
 }
 
