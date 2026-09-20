@@ -394,13 +394,14 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     mobileSheetMaxHeight,
     Math.max(300, mobileViewportHeight * 0.44),
   );
-  const showMobileDiscovery = !isMobileSheet || mobileSheetState === "expanded";
-  const mobileSheetSnapY: Record<MobileSheetState, number> = {
-    expanded: 0,
-    half: Math.max(0, mobileSheetMaxHeight - mobileHalfVisible),
-    collapsed: Math.max(0, mobileSheetMaxHeight - mobileCollapsedVisible),
+  const mobileSheetHeights: Record<MobileSheetState, number> = {
+    expanded: mobileSheetMaxHeight,
+    half: mobileHalfVisible,
+    collapsed: mobileCollapsedVisible,
   };
-  const mobileSheetY = isMobileSheet ? mobileSheetSnapY[mobileSheetState] : 0;
+  const mobileSheetHeight = isMobileSheet ? mobileSheetHeights[mobileSheetState] : 0;
+  const showMobileSearch = !isMobileSheet || mobileSheetState !== "collapsed";
+  const showMobileDiscovery = !isMobileSheet || mobileSheetState === "expanded";
 
   function snapMobileSheet(offsetY: number, velocityY: number) {
     if (!isMobileSheet) return;
@@ -416,10 +417,10 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
       return;
     }
 
-    const projectedY = mobileSheetSnapY[startState] + offsetY + velocityY * 0.06;
+    const projectedHeight = mobileSheetHeights[startState] - offsetY - velocityY * 0.06;
     const nearest = MOBILE_SHEET_ORDER.reduce((best, state) =>
-      Math.abs(mobileSheetSnapY[state] - projectedY)
-        < Math.abs(mobileSheetSnapY[best] - projectedY)
+      Math.abs(mobileSheetHeights[state] - projectedHeight)
+        < Math.abs(mobileSheetHeights[best] - projectedHeight)
         ? state
         : best,
     "half" as MobileSheetState);
@@ -604,20 +605,26 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
         </AnimatePresence>
 
         <motion.aside
-          className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-auto max-[640px]:bottom-2 max-[640px]:w-auto max-[640px]:max-w-none max-[640px]:overflow-hidden max-[640px]:rounded-[26px]"
+          className="absolute left-4 top-[82px] z-20 w-[400px] max-w-[calc(100vw-32px)] overflow-visible rounded-[28px] bg-[#091218]/94 shadow-[0_24px_80px_rgba(0,0,0,.42)] backdrop-blur-2xl max-[640px]:left-2 max-[640px]:right-2 max-[640px]:top-auto max-[640px]:bottom-2 max-[640px]:box-border max-[640px]:w-auto max-[640px]:max-w-none max-[640px]:overflow-hidden max-[640px]:rounded-[26px]"
           style={{
-            height: isMobileSheet ? mobileSheetMaxHeight : undefined,
             maxHeight: isMobileSheet ? undefined : "calc(100dvh - 98px)",
           }}
-          animate={{ y: mobileSheetY }}
+          animate={isMobileSheet
+            ? { y: 0, height: mobileSheetHeight }
+            : { y: 0 }}
           transition={reduceMotion
             ? { duration: 0 }
             : { type: "spring", stiffness: 390, damping: 38, mass: 0.8 }}
           drag={isMobileSheet ? "y" : false}
           dragControls={sheetDragControls}
           dragListener={false}
-          dragConstraints={isMobileSheet ? { top: 0, bottom: mobileSheetSnapY.collapsed } : undefined}
-          dragElastic={0.06}
+          dragConstraints={isMobileSheet
+            ? {
+                top: -Math.min(180, Math.max(80, mobileSheetHeight * 0.45)),
+                bottom: Math.min(180, Math.max(80, mobileSheetHeight * 0.45)),
+              }
+            : undefined}
+          dragElastic={0.04}
           dragMomentum={false}
           onDragStart={() => {
             sheetDragStartRef.current = mobileSheetState;
@@ -648,23 +655,23 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
           )}
 
           {isMobileSheet && mobileSheetState === "collapsed" && selected && snapshot && (
-            <div className="px-4 pb-3">
-              <div className="flex items-start justify-between gap-3">
+            <div className="box-border w-full min-w-0 px-3 pb-3">
+              <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_44px] items-start gap-2">
                 <button
                   type="button"
                   onClick={() => setMobileSheetState("half")}
-                  className="min-w-0 flex-1 text-left"
+                  className="min-w-0 text-left"
                   aria-label="PlaySafe 상세 패널 열기"
                 >
-                  <div className="flex items-center gap-2">
-                    <strong className="truncate text-[16px] font-bold leading-6 text-white">{selected.place.name}</strong>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <strong className="min-w-0 truncate text-[16px] font-bold leading-6 text-white">{selected.place.name}</strong>
                     {selectedIsRecommended && (
                       <span className="shrink-0 rounded-full bg-[#53d6c7]/10 px-2 py-0.5 text-[10px] font-black text-[#79e4d7]">
                         추천
                       </span>
                     )}
                   </div>
-                  <div className="mt-1 text-[12px] font-semibold leading-5 text-[#9eabb2]">
+                  <div className="mt-1 truncate text-[12px] font-semibold leading-5 text-[#9eabb2]">
                     {walkingRoute
                       ? `도보 ${walkingRoute.durationMinutes}분 · ${walkingRoute.distanceM >= 1000
                           ? (walkingRoute.distanceM / 1000).toFixed(1) + "km"
@@ -676,7 +683,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 <button
                   type="button"
                   onClick={() => setMobileSheetState("half")}
-                  className="shrink-0 text-right"
+                  className="min-w-0 text-right"
                   aria-label="상세 정보 보기"
                 >
                   <span className={"block text-[20px] font-black tabular-nums " + fitTone(selected.fitScore)}>
@@ -686,16 +693,16 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 </button>
               </div>
 
-              <div className="mt-1.5 flex min-w-0 items-center gap-2">
-                <MapPin className="size-3.5 shrink-0 text-[#6e7e87]" />
-                <span className="min-w-0 flex-1 truncate text-[11px] leading-5 text-[#7f8d96]">
+              <div className="mt-1.5 grid min-w-0 grid-cols-[14px_minmax(0,1fr)_auto] items-center gap-2">
+                <MapPin className="size-3.5 text-[#6e7e87]" />
+                <span className="min-w-0 truncate text-[11px] leading-5 text-[#7f8d96]">
                   {selected.place.address || "주소 정보 없음"}
                 </span>
                 {selected.place.address && (
                   <button
                     type="button"
                     onClick={() => void copyAddress(selected.place.id, selected.place.address)}
-                    className="inline-flex shrink-0 items-center gap-1 text-[11px] font-bold text-[#72e2d3]"
+                    className="inline-flex items-center gap-1 whitespace-nowrap text-[11px] font-bold text-[#72e2d3]"
                   >
                     <Copy className="size-3" />
                     {copiedPlaceId === selected.place.id ? "복사됨" : "복사"}
@@ -703,20 +710,20 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                 )}
               </div>
 
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <div className="flex min-w-0 items-center gap-2 text-[10px] font-semibold text-[#71818a]">
-                  <span>그늘 {selected.shadePct.toFixed(0)}%</span>
+              <div className="mt-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 overflow-hidden text-[10px] font-semibold leading-4 text-[#71818a]">
+                  <span className="whitespace-nowrap">그늘 {selected.shadePct.toFixed(0)}%</span>
                   {walkingRoute?.quality.traceStatus === "available" && (
-                    <span>· 보행로 {walkingRoute.quality.pedestrianOnlyPct}%</span>
+                    <span className="whitespace-nowrap">· 보행로 {walkingRoute.quality.pedestrianOnlyPct}%</span>
                   )}
                   {betterTimeLabel && (
-                    <span className="truncate text-[#d9bd63]">· {betterTimeLabel} +{betterTimeDelta}</span>
+                    <span className="truncate whitespace-nowrap text-[#d9bd63]">· {betterTimeLabel} +{betterTimeDelta}</span>
                   )}
                 </div>
                 <button
                   type="button"
                   onClick={walkingRoute ? showRouteOnMap : () => triggerMapView("focus", selected.place.point)}
-                  className="shrink-0 rounded-full bg-[#53d6c7]/10 px-3 py-1.5 text-[11px] font-black text-[#79e4d7]"
+                  className="shrink-0 whitespace-nowrap rounded-full bg-[#53d6c7]/10 px-2.5 py-1.5 text-[11px] font-black text-[#79e4d7]"
                 >
                   지도 보기
                 </button>
@@ -731,13 +738,13 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
             )}
             style={{
               maxHeight: isMobileSheet
-                ? Math.max(0, mobileSheetMaxHeight - 32)
+                ? Math.max(0, mobileSheetHeight - 32)
                 : "calc(100dvh - 98px)",
             }}
           >
             <div data-playsafe-safe-area style={{ padding: "20px 24px 32px", lineHeight: 1.5 }}>
               <div
-                className={"relative " + (showMobileDiscovery ? "" : "hidden")}
+                className={"relative " + (showMobileSearch ? "" : "hidden")}
                 onBlur={(event) => {
                   if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                     setSearchOpen(false);
