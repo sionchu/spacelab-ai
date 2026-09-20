@@ -165,6 +165,14 @@ export type PlaySafePublicContext = {
   };
 };
 
+export type PlaySafeRouteSegment = {
+  kind: "pedestrian" | "crossing" | "shared-road" | "unknown";
+  points: GeoPoint[];
+  distanceM: number;
+  use?: string;
+  roadClass?: string;
+};
+
 export type PlaySafeWalkingRoute = {
   provider: "valhalla-osm";
   start: GeoPoint;
@@ -172,6 +180,18 @@ export type PlaySafeWalkingRoute = {
   distanceM: number;
   durationMinutes: number;
   points: GeoPoint[];
+  segments: PlaySafeRouteSegment[];
+  quality: {
+    traceStatus: "available" | "unavailable";
+    pedestrianOnlyM: number;
+    crossingM: number;
+    sharedRoadM: number;
+    unknownM: number;
+    pedestrianOnlyPct: number;
+    crossingPct: number;
+    sharedRoadPct: number;
+    unknownPct: number;
+  };
   summary: {
     childZones: number;
     childZoneCctvCount: number;

@@ -25,6 +25,7 @@ export type PlaySafeSearchResult = {
   kind: PlaySafeSearchKind;
   source: "kapt" | "public-data" | "vworld";
   score: number;
+  facilityType?: string;
 };
 type ApartmentEntry = {
   code: string;
@@ -50,6 +51,7 @@ type IndexedLocal = {
   kind: "apartment" | "park" | "childFacility" | "toilet";
   source: "kapt" | "public-data";
   point?: GeoPoint;
+  facilityType?: string;
   titleKey: string;
   addressKey: string;
 };
@@ -234,14 +236,18 @@ async function loadSearchIndex(): Promise<SearchIndex> {
         const lat = Number(item.lat);
         if (!Number.isFinite(lon) || !Number.isFinite(lat) || !item.name) continue;
         const address = String(item.address || "");
+        const facilityType = kind === "childFacility"
+          ? String(item.facilityType || (prefix === "center" ? "지역아동센터" : ""))
+          : "";
         publicPlaces.push(indexedLocal({
           id: prefix + ":" + item.id,
           title: String(item.name),
           address,
-          addresses: address ? [address] : [],
+          addresses: [address, facilityType].filter(Boolean),
           kind,
           source: "public-data",
           point: { lon, lat },
+          facilityType: facilityType || undefined,
         }));
       }
     };
@@ -433,6 +439,7 @@ export async function searchPlaySafePlaces(
         kind: item.kind,
         source: item.source,
         score,
+        facilityType: item.facilityType,
       } satisfies PlaySafeSearchResult]
     : []);
   const variants = searchVariants(trimmed, apartmentMatches);

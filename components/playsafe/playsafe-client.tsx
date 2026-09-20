@@ -33,6 +33,7 @@ type SearchResult = {
   kind?: "apartment" | "park" | "childFacility" | "toilet" | "place" | "road" | "parcel";
   source?: "kapt" | "public-data" | "vworld";
   score?: number;
+  facilityType?: string;
 };
 
 function kstNowParts() {
@@ -213,14 +214,19 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
     triggerMapView("search", result.point);
   }
 
-  function searchKindLabel(kind?: SearchResult["kind"]) {
-    if (kind === "apartment") return "아파트";
-    if (kind === "park") return "공원";
-    if (kind === "childFacility") return "아동시설";
-    if (kind === "toilet") return "편의";
-    if (kind === "place") return "장소";
-    if (kind === "road") return "도로명";
-    if (kind === "parcel") return "지번";
+  function searchKindLabel(result: SearchResult) {
+    if (result.kind === "apartment") return "아파트";
+    if (result.kind === "park") return "공원";
+    if (result.kind === "childFacility") {
+      const facilityType = result.facilityType || "";
+      if (facilityType.includes("어린이집") || result.title.includes("어린이집")) return "어린이집";
+      if (facilityType.includes("유치원") || result.title.includes("유치원")) return "유치원";
+      return facilityType || "아동시설";
+    }
+    if (result.kind === "toilet") return "편의";
+    if (result.kind === "place") return "장소";
+    if (result.kind === "road") return "도로명";
+    if (result.kind === "parcel") return "지번";
     return "위치";
   }
 
@@ -497,7 +503,7 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
                         className="flex w-full items-start gap-3 border-b border-white/[0.05] px-4 py-3.5 text-left last:border-b-0 hover:bg-white/[0.05] focus-visible:bg-white/[0.07] focus-visible:outline-none"
                       >
                         <span className="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-1 text-[12px] font-bold leading-4 text-[#8fa0aa]">
-                          {searchKindLabel(result.kind)}
+                          {searchKindLabel(result)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <strong className="block truncate text-[14px] font-bold leading-5 text-white">
@@ -723,6 +729,17 @@ export function PlaySafeClient({ vworldEnabled }: { vworldEnabled: boolean }) {
 
                   {routeMessage && (
                     <p className="mt-3 text-[13px] leading-6 text-[#d6bd73]">{routeMessage}</p>
+                  )}
+
+                  {walkingRoute && (
+                    <div className="mt-3 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
+                      <p className="text-[12px] leading-5 text-[#91a0a8]">
+                        보도·보행로 {walkingRoute.quality.pedestrianOnlyPct}%
+                        <span className="mx-2 text-white/20">·</span>
+                        차도 공유/중심선 {walkingRoute.quality.sharedRoadPct}%
+                      </p>
+                      <p className="mt-1 text-[12px] leading-5 text-[#71818a]">{walkingRoute.note}</p>
+                    </div>
                   )}
 
                   {walkingRoute && (
