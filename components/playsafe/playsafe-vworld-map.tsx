@@ -786,18 +786,17 @@ export function PlaySafeVWorldMap({
         ? selected?.place.point ?? snapshot.query.center
         : viewAction.point ?? snapshot.query.center;
 
-      viewer.camera.flyTo({
-        destination: Cesium.Cartesian3.fromDegrees(
-          target.lon,
-          target.lat,
-          viewAction.type === "top" ? 900 : viewAction.type === "focus" ? 720 : 850,
-        ),
-        orientation: {
-          heading: Cesium.Math.toRadians(viewAction.type === "top" ? 0 : 335),
-          pitch: Cesium.Math.toRadians(viewAction.type === "top" ? -90 : -48),
-          roll: 0,
-        },
+      const targetSphere = new Cesium.BoundingSphere(
+        Cesium.Cartesian3.fromDegrees(target.lon, target.lat),
+        1,
+      );
+      viewer.camera.flyToBoundingSphere(targetSphere, {
         duration: 0.65,
+        offset: new Cesium.HeadingPitchRange(
+          Cesium.Math.toRadians(viewAction.type === "top" ? 0 : 335),
+          Cesium.Math.toRadians(viewAction.type === "top" ? -90 : -48),
+          viewAction.type === "top" ? 900 : viewAction.type === "focus" ? 620 : 760,
+        ),
       });
       viewer.scene.requestRender?.();
     };
