@@ -1,5 +1,8 @@
 import { searchVWorldPlaceNearby } from "@/lib/vworld/server";
-import { nearbyMoisPlaygrounds } from "@/lib/server/playsafe-safemap";
+import {
+  nearbyOfficialPlaygrounds,
+  OFFICIAL_PLAYGROUND_SOURCE,
+} from "@/lib/server/playsafe-cpf";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
 import type { PlayPlace, PlaySafeTree } from "@/src/playsafe";
 
@@ -273,7 +276,7 @@ async function fetchPlaySafeMapContext(
   limit: number,
 ): Promise<PlaySafeMapContext> {
   const vworldPlacesPromise = nearbyVWorldPlayPlaces(lon, lat, radiusM).catch(() => []);
-  const moisPlacesPromise = nearbyMoisPlaygrounds({ lon, lat }, radiusM, 80).catch(() => []);
+  const officialPlacesPromise = nearbyOfficialPlaygrounds({ lon, lat }, radiusM, 80).catch(() => []);
   const url = new URL("https://api.openstreetmap.org/api/0.6/map");
   url.searchParams.set("bbox", bbox(lon, lat, radiusM));
 
@@ -326,15 +329,15 @@ async function fetchPlaySafeMapContext(
     });
   }
 
-  const [moisPlaces, vworldPlaces] = await Promise.all([
-    moisPlacesPromise,
+  const [officialPlaces, vworldPlaces] = await Promise.all([
+    officialPlacesPromise,
     vworldPlacesPromise,
   ]);
-  placeItems.push(...moisPlaces, ...vworldPlaces);
+  placeItems.push(...officialPlaces, ...vworldPlaces);
   const places = choosePlaces(placeItems, limit);
   const playgroundSources = [
     "OpenStreetMap",
-    ...(moisPlaces.length ? ["MOIS SafeMap IF_0007"] : []),
+    ...(officialPlaces.length ? [OFFICIAL_PLAYGROUND_SOURCE] : []),
     ...(vworldPlaces.length ? ["VWorld nearby POI"] : []),
   ];
   const trees: PlaySafeTree[] = [];
