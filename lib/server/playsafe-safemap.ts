@@ -1,7 +1,7 @@
 import type { PlayPlace } from "@/src/playsafe";
 import type { GeoPoint } from "@/src/types";
 
-const BASE_URL = "https://www.safemap.go.kr/openapi2/IF_0007";
+const BASE_URL = "https://safemap.go.kr/openapi2/IF_0007";
 const PAGE_SIZE = 5_000;
 const CACHE_TTL_MS = 6 * 60 * 60_000;
 const ALLOWED_INSTALL_PLACE_CODES = new Set(["A003", "A010", "A020"]);
@@ -105,9 +105,6 @@ async function fetchPage(key: string, pageNo: number): Promise<FacilityPage> {
     signal: AbortSignal.timeout(15_000),
     next: { revalidate: 21_600 },
   });
-  if (!response.ok) {
-    throw new Error("MOIS SafeMap playground API failed: HTTP " + response.status);
-  }
 
   const text = await response.text();
   let payload: any;
@@ -123,12 +120,12 @@ async function fetchPage(key: string, pageNo: number): Promise<FacilityPage> {
       ?? payload?.resultCode
       ?? "",
   ).trim();
-  if (resultCode && resultCode !== "00" && resultCode !== "0") {
+  if (!response.ok || (resultCode && resultCode !== "00" && resultCode !== "0")) {
     const message = String(
       payload?.response?.header?.resultMsg
         ?? payload?.header?.resultMsg
         ?? payload?.resultMsg
-        ?? resultCode,
+        ?? ("HTTP " + response.status),
     );
     throw new Error("MOIS SafeMap playground API error: " + message);
   }
